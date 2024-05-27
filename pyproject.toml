@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "temnerf"
+version = "0.0.1"
+dependencies = [
+    "numpy",
+    "hydra-core",
+    "mlflow",
+    "lightning",
+    "ray[tune]",
+    "torch",
+    "torchvision",
+    "scikit-image",
+    "matplotlib"
+]
+
+description = "Package containing the code required to run experiments on the application of NeRFs for reconstruction of Electronic Tomography data"
+readme = "README.md"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[project.scripts]
+
+[tool.setuptools.packages.find]
+where = ["src"]
