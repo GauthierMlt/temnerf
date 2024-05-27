@@ -8,13 +8,11 @@ version = "0.0.1"
 dependencies = [
     "numpy",
     "hydra-core",
-    "mlflow",
-    "lightning",
-    "ray[tune]",
     "torch",
     "torchvision",
     "scikit-image",
-    "matplotlib"
+    "matplotlib",
+    "kornia"
 ]
 
 description = "Package containing the code required to run experiments on the application of NeRFs for reconstruction of Electronic Tomography data"
@@ -24,6 +22,7 @@ readme = "README.md"
 package-dir = {"" = "src"}
 
 [project.scripts]
+temnerf_train = "run_training:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]
