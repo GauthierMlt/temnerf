@@ -11,7 +11,7 @@ from data.nerfimage import NerfImage
 import data.transforms as transforms
 from tqdm import tqdm
 
-class ImagesDataset(Dataset):
+class ProjectionsDataset(Dataset):
     def __init__(self, data_name, filename, split, img_wh, scale, n_chan, device, noise_level=0, n_train=0):
         self.data_name = data_name
         self.root_dir = f'data/{data_name}'
@@ -52,11 +52,8 @@ class ImagesDataset(Dataset):
             frames = self.meta['frames']
             sampled_indices = np.linspace(0, len(frames) - 1, min(self.n_train, len(frames)), endpoint=False).astype(int)
 
-            print(f"n_images: {self.n_train}, angles: {sampled_indices*0.5}") # 0.5 -> angle between each acquisition
-
             sampled_frames  = [frames[i] for i in sampled_indices]
             
-            # for idx, frame in enumerate(tqdm(random.sample(frames, self.n_train), desc="Loading training data")):
             for idx, frame in enumerate(tqdm(sampled_frames, desc="Loading training data")):
 
                 rays_o, rays_d = self.process_rays(frame)
@@ -66,12 +63,7 @@ class ImagesDataset(Dataset):
     
             self.all_rgbs = torch.cat(self.all_rgbs, 0).to(self.device) # (len(self.meta['frames])*h*w, 3)
             self.all_rays = torch.cat(self.all_rays, 0) # (len(self.meta['frames])*h*w, 8)
-
-            # print(self.all_rgbs.size())
-            # print(self.all_rays.size())
-
-            # import sys
-            # sys.exit()
+            
 
             assert torch.max(self.all_rgbs) <= 1.0 # should all be between 0 and 1
             self.data = torch.cat((self.all_rays[:,:6],self.all_rgbs[:,:]),1)
