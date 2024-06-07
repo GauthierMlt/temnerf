@@ -19,7 +19,7 @@ except ImportError:
 	print("============================================================")
 	TINY_CUDA = False
 	
-from data.imagesdataset import ImagesDataset
+from data.projectionsdataset import ProjectionsDataset
 from models.nerf import Nerf
 from data.datasets import get_params
 from test import *
@@ -67,7 +67,9 @@ def init_output_dir(out_path):
 @hydra.main(config_path="config", config_name="example", version_base="1.2")
 def run(_cfg: DictConfig):
 
-	tf_writer = SummaryWriter(log_dir=hydra.core.hydra_config.HydraConfig.get().runtime.output_dir)
+	out_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
+
+	tf_writer = SummaryWriter(log_dir=out_dir)
 
 	set_seed(_cfg.optim.seed)
 
@@ -97,7 +99,6 @@ def run(_cfg: DictConfig):
 	near = 0.5*radius - object_size / 2
 	far  = 0.5*radius + object_size / 2
 
-	out_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
 
 	if not _cfg.optim.get("checkpoint", False):
 		optim = OmegaConf.to_container(_cfg.optim)
@@ -107,15 +108,15 @@ def run(_cfg: DictConfig):
 		intermediate_slices = _cfg["output"].get("intermediate_slices", True)
 		print(f"Output will be written to {out_dir}.")
 
-		training_dataset = ImagesDataset(data_name, 
-								   		data_config["transforms_file"], 
-										split="train", 
-										device=device,
-								        img_wh=(w,h), 
-										scale=object_size, 
-										n_chan=c, 
-										noise_level=data_config["noise_level"], 
-										n_train=data_config["n_images"])
+		training_dataset = ProjectionsDataset(data_name, 
+								   			  data_config["transforms_file"], 
+											  split="train", 
+											  device=device,
+											  img_wh=(w,h), 
+											  scale=object_size, 
+											  n_chan=c, 
+											  noise_level=data_config["noise_level"], 
+											  n_train=data_config["n_images"])
 		
 		if optim["pixel_importance_sampling"]:
 			pixel_weights = training_dataset.get_pixel_values()
@@ -148,7 +149,7 @@ def run(_cfg: DictConfig):
 		with tqdm(range(optim["training_epochs"]), desc="Epochs") as t:
 			for ep in t:
 
-				start = time.time()
+				ep_idx = ep * len(data_loader) 
 				for batch_num, batch in enumerate(tqdm(data_loader, leave=False, desc="Batch")):
 					ray_origins 		   = batch[:, :3]
 					ray_directions 		   = batch[:, 3:6]
@@ -161,16 +162,18 @@ def run(_cfg: DictConfig):
 					loss.backward()
 					model_optimizer.step()
 
-					batch_index = ep * len(data_loader) + batch_num
-					training_loss_db[batch_index] = linear_to_db(loss).item()
-					tf_writer.add_scalar("loss", loss, batch_index) 
-					tf_writer.add_scalar("PSNR (db)", training_loss_db[batch_index], batch_index) 
+					batch_idx = ep_idx + batch_num
+					training_loss_db[ batch_idx] = linear_to_db(loss).item()
+
+					if (batch_num % 500) == 0:
+						tf_writer.add_scalar("loss", loss, batch_idx) 
+						tf_writer.add_scalar("PSNR (db)", training_loss_db[batch_idx], batch_idx) 
 
 				scheduler.step()
 				torch.save(model.state_dict(), os.path.join(checkpoint_path, f'nerf_model_{ep}.pt')) # save after each epoch
 				# model.to(device)
 				
-				t.set_postfix(loss=f"{training_loss_db[batch_index]:.1f} dB per pixel")
+				t.set_postfix(loss=f"{training_loss_db[batch_idx]:.1f} dB per pixel")
 				write_slices(model, device, ep, batch_num, _cfg["output"], slices_path) 
 				# print(f"{time.time()-start}")
 		
@@ -203,12 +206,12 @@ def run(_cfg: DictConfig):
 	
 	if output["images"]:
 		# no noise in test data
-		testing_dataset = ImagesDataset(data_name, 
-								        data_config["transforms_file"], 
-										device="cpu", split="test", 
-										img_wh=(w,h), 
-										scale=object_size, 
-										n_chan=c)
+		testing_dataset = ProjectionsDataset(data_name, 
+								             data_config["transforms_file"], 
+										     device="cpu", split="test", 
+										     img_wh=(w,h), 
+										     scale=object_size, 
+										     n_chan=c)
 		
 		for img_index in range(1):
 			test_loss, imgs = test_model(model=trained_model, dataset=testing_dataset, img_index=img_index, hn=near, hf=far, device=test_device, nb_bins=output["samples_per_ray"], H=h, W=w)
