@@ -31,8 +31,10 @@ from utils.utils import set_seed
 import commentjson as json
 import hydra
 from hydra import utils
-from omegaconf import DictConfig
-from omegaconf import OmegaConf
+from omegaconf import DictConfig, OmegaConf
+from torch.utils.tensorboard import SummaryWriter
+import subprocess
+
 
 def write_slices(model, device, epoch, sub_epoch, output, out_dir):
 		MAX_BRIGHTNESS = 10.
@@ -52,13 +54,20 @@ def parse_args():
 
 	return parser.parse_args()
 
+def init_output_dir(out_path):
+
+	checkpoint_path = os.path.join(out_path, "checkpoints")
+	slices_path = os.path.join(out_path, "slices")
+
+	os.mkdir(checkpoint_path)
+	os.mkdir(slices_path)
+
+	return checkpoint_path, slices_path
 
 @hydra.main(config_path="config", config_name="example", version_base="1.2")
 def run(_cfg: DictConfig):
-	# args = parse_args()
 
-	print(f"Working directory : {os.getcwd()}")
-	print(f"Output directory  : {hydra.core.hydra_config.HydraConfig.get().runtime.output_dir}")
+	tf_writer = SummaryWriter(log_dir=hydra.core.hydra_config.HydraConfig.get().runtime.output_dir)
 
 	set_seed(_cfg.optim.seed)
 
@@ -69,8 +78,9 @@ def run(_cfg: DictConfig):
 	else:
 		print(f"No GPU acceleration available")
 
-	network_config = OmegaConf.to_container(_cfg.network)
+	network_config  = OmegaConf.to_container(_cfg.network)
 	encoding_config = OmegaConf.to_container(_cfg.encoding)
+	
 	if TINY_CUDA:
 		model = tcnn.NetworkWithInputEncoding(n_input_dims=3, n_output_dims=1, encoding_config=encoding_config, network_config=network_config).to(device)
 	else: 
@@ -97,7 +107,6 @@ def run(_cfg: DictConfig):
 		intermediate_slices = _cfg["output"].get("intermediate_slices", True)
 		print(f"Output will be written to {out_dir}.")
 
-		# print(f"Loading training data...")
 		training_dataset = ImagesDataset(data_name, 
 								   		data_config["transforms_file"], 
 										split="train", 
@@ -132,8 +141,10 @@ def run(_cfg: DictConfig):
 		total_batches = optim["training_epochs"] * len(data_loader)
 		training_loss_db = torch.zeros(total_batches, dtype=torch.float16, device=device)
 		
-		# training_loss_db = torch.empty(total_batches, dtype=torch.float16, device=device)
+		# training_loss_db = torch.empty(total_batches, dtype=torch.float16, device=device
 		
+		checkpoint_path, slices_path = init_output_dir(out_dir)
+
 		with tqdm(range(optim["training_epochs"]), desc="Epochs") as t:
 			for ep in t:
 
@@ -152,25 +163,26 @@ def run(_cfg: DictConfig):
 
 					batch_index = ep * len(data_loader) + batch_num
 					training_loss_db[batch_index] = linear_to_db(loss).item()
-					# if intermediate_slices and (batch_num % interval == 0):
-					# 	write_slices(model, device, ep, batch_num, config["output"], out_dir) # output slices during training
-					# 	interval *= 10 # intermediate slices only written during first epoch
+					tf_writer.add_scalar("loss", loss, batch_index) 
+					tf_writer.add_scalar("PSNR (db)", training_loss_db[batch_index], batch_index) 
+
 				scheduler.step()
-				# torch.save(model.cpu(), os.path.join('out', 'nerf_model')) # save after each epoch
+				torch.save(model.state_dict(), os.path.join(checkpoint_path, f'nerf_model_{ep}.pt')) # save after each epoch
 				# model.to(device)
+				
 				t.set_postfix(loss=f"{training_loss_db[batch_index]:.1f} dB per pixel")
-				write_slices(model, device, ep, batch_num, _cfg["output"], out_dir) 
+				write_slices(model, device, ep, batch_num, _cfg["output"], slices_path) 
 				# print(f"{time.time()-start}")
 		
-		write_slices(model, device, ep, batch_num, _cfg["output"], out_dir) 
+		# write_slices(model, device, ep, batch_num, _cfg["output"], out_dir) 
 
-		training_time = time.monotonic() - now
-		timestamp = time.strftime("%Y_%m_%d_%H:%M:%S")
+		# training_time = time.monotonic() - now
+		# timestamp = time.strftime("%Y_%m_%d_%H:%M:%S")
 
-		snapshot_path = f"{out_dir}/checkpoint.pt"
-		torch.save(model.state_dict(), snapshot_path)
+		# snapshot_path = f"{out_dir}/checkpoint.pt"
+		# torch.save(model.state_dict(), snapshot_path)
 		trained_model = model
-		print(f"Training complete. Model weights saved as {snapshot_path}")
+		print(f"Training complete.")
 	else:
 		snapshot = _cfg.optim.checkpoint
 		print(f"Loading model from {snapshot}")
@@ -180,6 +192,7 @@ def run(_cfg: DictConfig):
 		trained_model.eval()
 
 	has_gt = True if _cfg["data"]["dataset"] == "jaw" else False
+
 	if has_gt:
 		phantom = np.load("data/jaw/jaw_phantom.npy")
 
