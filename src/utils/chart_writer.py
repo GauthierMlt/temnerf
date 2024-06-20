@@ -88,7 +88,8 @@ def write_img(img, path, verbose=True):
 
 @torch.no_grad
 def linear_to_db(x):
-	return -10. * torch.log(x) / torch.log(torch.tensor(10.))
+	# return -10. * torch.log(x) / torch.log(torch.tensor(10.))
+	return -10. * torch.log10(2*x)
 
 
 if __name__ == '__main__':

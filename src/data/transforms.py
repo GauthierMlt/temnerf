@@ -32,3 +32,7 @@ def jaw(img, shape):
     img = np.float32(img)
     return img
 
+def au_ag(img, shape):
+    img = transform.resize(img, shape, anti_aliasing=True)
+    # img = np.float32(img)
+    return img

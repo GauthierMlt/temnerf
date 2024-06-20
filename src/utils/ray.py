@@ -1,6 +1,6 @@
 import torch
 from kornia import create_meshgrid
-
+import numpy as np
 
 def get_ray_directions(H, W, focal):
     """
@@ -51,46 +51,89 @@ def get_rays(directions, c2w):
     return rays_o, rays_d
 
 
-# Not used
-def get_ndc_rays(H, W, focal, near, rays_o, rays_d):
-    """
-    Transform rays from world coordinate to NDC.
-    NDC: Space such that the canvas is a cube with sides [-1, 1] in each axis.
-    For detailed derivation, please see:
-    http://www.songho.ca/opengl/gl_projectionmatrix.html
-    https://github.com/bmild/nerf/files/4451808/ndc_derivation.pdf
+def create_geometry_vectors(angles: np.ndarray, 
+                            detector_spacing_X:float=1.0, 
+                            detector_spacing_Y:float=1.0) -> np.ndarray:
 
-    In practice, use NDC "if and only if" the scene is unbounded (has a large depth).
-    See https://github.com/bmild/nerf/issues/18
+    vectors = np.zeros((len(angles), 12))
+
+    for i in range(len(angles)):
+
+        # ray direction
+        vectors[i, 0] = np.sin(angles[i])
+        vectors[i, 1] = -np.cos(angles[i])
+        vectors[i, 2] = 0
+
+        # center of detector
+        vectors[i, 3] = 0
+        vectors[i, 4] = 0
+        vectors[i, 5] = 0
+
+        # vector from detector pixel (0,0) to (0,1)
+        vectors[i, 6] = np.cos(angles[i]) * detector_spacing_X
+        vectors[i, 7] = np.sin(angles[i]) * detector_spacing_X
+        vectors[i, 8] = 0
+
+        # vector from detector pixel (0,0) to (1,0)
+        vectors[i, 9] = 0
+        vectors[i, 10] = 0
+        vectors[i, 11] = detector_spacing_Y
+
+    return vectors
+    
+def get_ray_directions_orthographic(H, W):
+    """
+    Get ray directions for all pixels in camera coordinate for orthographic projection.
+    
+    Inputs:
+        H, W: image height, width
+    
+    Outputs:
+        directions: (H, W, 3), the direction of the rays in camera coordinate
+    """
+    
+    grid = create_meshgrid(H, W, normalized_coordinates=False)[0]
+    i, j = grid.unbind(-1)
+    directions = torch.stack([torch.zeros_like(i), torch.zeros_like(j), -torch.ones_like(i)], -1)
+    return directions, (i+0.5)/W, (j+0.5)/H
+
+def get_rays_orthographic(directions, c2w):
+    """
+    Get ray origin and normalized directions in world coordinate for all pixels in one image for orthographic projection.
 
     Inputs:
-        H, W, focal: image height, width and focal length
-        near: (N_rays) or float, the depths of the near plane
-        rays_o: (N_rays, 3), the origin of the rays in world coordinate
-        rays_d: (N_rays, 3), the direction of the rays in world coordinate
+        directions: (H, W, 3) precomputed ray directions in camera coordinate
+        c2w: (3, 4) transformation matrix from camera coordinate to world coordinate
 
     Outputs:
-        rays_o: (N_rays, 3), the origin of the rays in NDC
-        rays_d: (N_rays, 3), the direction of the rays in NDC
+        rays_o: (H*W, 3), the origin of the rays in world coordinate
+        rays_d: (H*W, 3), the normalized direction of the rays in world coordinate
     """
-    # Shift ray origins to near plane
-    t = -(near + rays_o[...,2]) / rays_d[...,2]
-    rays_o = rays_o + t[...,None] * rays_d
 
-    # Store some intermediate homogeneous results
-    ox_oz = rays_o[...,0] / rays_o[...,2]
-    oy_oz = rays_o[...,1] / rays_o[...,2]
-    
-    # Projection
-    o0 = -1./(W/(2.*focal)) * ox_oz
-    o1 = -1./(H/(2.*focal)) * oy_oz
-    o2 = 1. + 2. * near / rays_o[...,2]
-
-    d0 = -1./(W/(2.*focal)) * (rays_d[...,0]/rays_d[...,2] - ox_oz)
-    d1 = -1./(H/(2.*focal)) * (rays_d[...,1]/rays_d[...,2] - oy_oz)
-    d2 = 1 - o2
-    
-    rays_o = torch.stack([o0, o1, o2], -1) # (B, 3)
-    rays_d = torch.stack([d0, d1, d2], -1) # (B, 3)
-    
+    rays_d = directions @ c2w[:, :3].T
+    rays_d = rays_d / torch.norm(rays_d, dim=-1, keepdim=True)
+    rays_o = c2w[:, 3].expand(rays_d.shape)
+    rays_d = rays_d.view(-1, 3)
+    rays_o = rays_o.view(-1, 3)
     return rays_o, rays_d
+
+def rotation_matrix_y(angle):
+    """
+    Compute the rotation matrix for a given angle around the Y-axis.
+
+    Inputs:
+        angle: Rotation angle in radians.
+
+    Outputs:
+        rotation_matrix: (3, 3) rotation matrix around the Y-axis.
+    """
+    cos_angle = torch.cos(angle).item()
+    sin_angle = torch.sin(angle).item()
+
+    rotation_matrix = torch.tensor([
+        [cos_angle, 0, sin_angle],
+        [0, 1, 0],
+        [-sin_angle, 0, cos_angle]
+    ], dtype=torch.float32)
+    return rotation_matrix
+

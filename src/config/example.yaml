@@ -1,14 +1,15 @@
 network:
-    otype: CutlassMLP
+    # otype: CutlassMLP
+    otype: FullyFusedMLP
     activation: ReLU
     output_activation: None
-    n_neurons: 256
+    n_neurons: 128
     n_hidden_layers: 8
 
 
 encoding:
-    otype: Frequency
-    type: Dense
+    otype: HashGrid
+    type: Hash
     n_levels: 16
     n_features_per_level: 2
     log2_hashmap_size: 17
@@ -35,10 +36,11 @@ optim:
 data:
     dataset: walnut
     transforms_file: transforms
-    img_size: 256
-    n_images: 20
+    img_size: 1024
+    n_images: 75
     noise_level: 0
-
+    images_path: data/Au_Ag/Serie_3_ali.tif
+    angles_path: data/Au_Ag/TiltAngle_ali.txt
 
 output:
     images: true

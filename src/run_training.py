@@ -20,6 +20,7 @@ except ImportError:
 	TINY_CUDA = False
 	
 from data.projectionsdataset import ProjectionsDataset
+from data.emdataset import EMDataset
 from models.nerf import Nerf
 from data.datasets import get_params
 from test import *
@@ -108,16 +109,21 @@ def run(_cfg: DictConfig):
 		intermediate_slices = _cfg["output"].get("intermediate_slices", True)
 		print(f"Output will be written to {out_dir}.")
 
-		training_dataset = ProjectionsDataset(data_name, 
-								   			  data_config["transforms_file"], 
-											  split="train", 
-											  device=device,
-											  img_wh=(w,h), 
-											  scale=object_size, 
-											  n_chan=c, 
-											  noise_level=data_config["noise_level"], 
-											  n_train=data_config["n_images"])
+		# training_dataset = ProjectionsDataset(data_name, 
+		# 						   			  data_config["transforms_file"], 
+		# 									  split="train", 
+		# 									  device=device,
+		# 									  img_wh=(w,h), 
+		# 									  scale=object_size, 
+		# 									  n_chan=c, 
+		# 									  noise_level=data_config["noise_level"], 
+		# 									  n_train=data_config["n_images"])
 		
+		
+		training_dataset = EMDataset(device,
+							   	     data_config["images_path"],
+									 data_config["angles_path"])
+
 		if optim["pixel_importance_sampling"]:
 			pixel_weights = training_dataset.get_pixel_values()
 			sampler = WeightedRandomSampler(pixel_weights, len(pixel_weights))
@@ -154,7 +160,7 @@ def run(_cfg: DictConfig):
 					ray_origins 		   = batch[:, :3]
 					ray_directions 		   = batch[:, 3:6]
 					ground_truth_px_values = batch[:, 6]
-
+					
 					regenerated_px_values = get_pixel_values(model, ray_origins, ray_directions, hn=near, hf=far, nb_bins=optim["samples_per_ray"])
 					
 					loss = loss_function(regenerated_px_values, ground_truth_px_values)
