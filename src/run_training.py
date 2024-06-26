@@ -97,9 +97,8 @@ def run(_cfg: DictConfig):
 	c, radius, object_size, aspect_ratio = get_params(data_name)
 
 	w = int(h*aspect_ratio)
-	near = 0.5*radius - object_size / 2
-	far  = 0.5*radius + object_size / 2
-
+	near = 0.5*radius - 0.5*object_size 
+	far  = 0.5*radius + 0.5*object_size 
 
 	if not _cfg.optim.get("checkpoint", False):
 		optim = OmegaConf.to_container(_cfg.optim)
@@ -109,20 +108,11 @@ def run(_cfg: DictConfig):
 		intermediate_slices = _cfg["output"].get("intermediate_slices", True)
 		print(f"Output will be written to {out_dir}.")
 
-		# training_dataset = ProjectionsDataset(data_name, 
-		# 						   			  data_config["transforms_file"], 
-		# 									  split="train", 
-		# 									  device=device,
-		# 									  img_wh=(w,h), 
-		# 									  scale=object_size, 
-		# 									  n_chan=c, 
-		# 									  noise_level=data_config["noise_level"], 
-		# 									  n_train=data_config["n_images"])
+		if "au" in data_name:
+			training_dataset = EMDataset(device,data_config["images_path"],data_config["angles_path"],data_config["img_size"])
+		else:
+			training_dataset = ProjectionsDataset(data_name, data_config["transforms_file"], split="train", device=device,img_wh=(w,h), scale=object_size, n_chan=c, noise_level=data_config["noise_level"], n_train=data_config["n_images"])	
 		
-		
-		training_dataset = EMDataset(device,
-							   	     data_config["images_path"],
-									 data_config["angles_path"])
 
 		if optim["pixel_importance_sampling"]:
 			pixel_weights = training_dataset.get_pixel_values()
@@ -148,8 +138,6 @@ def run(_cfg: DictConfig):
 		total_batches = optim["training_epochs"] * len(data_loader)
 		training_loss_db = torch.zeros(total_batches, dtype=torch.float16, device=device)
 		
-		# training_loss_db = torch.empty(total_batches, dtype=torch.float16, device=device
-		
 		checkpoint_path, slices_path = init_output_dir(out_dir)
 
 		with tqdm(range(optim["training_epochs"]), desc="Epochs") as t:
@@ -160,7 +148,7 @@ def run(_cfg: DictConfig):
 					ray_origins 		   = batch[:, :3]
 					ray_directions 		   = batch[:, 3:6]
 					ground_truth_px_values = batch[:, 6]
-					
+
 					regenerated_px_values = get_pixel_values(model, ray_origins, ray_directions, hn=near, hf=far, nb_bins=optim["samples_per_ray"])
 					
 					loss = loss_function(regenerated_px_values, ground_truth_px_values)
@@ -195,7 +183,7 @@ def run(_cfg: DictConfig):
 	else:
 		snapshot = _cfg.optim.checkpoint
 		print(f"Loading model from {snapshot}")
-		training_loss = None # no info
+		training_loss_db = torch.zeros(1) # no info
 		trained_model = model
 		trained_model.load_state_dict(torch.load(snapshot))
 		trained_model.eval()
@@ -212,14 +200,14 @@ def run(_cfg: DictConfig):
 	
 	if output["images"]:
 		# no noise in test data
-		testing_dataset = ProjectionsDataset(data_name, 
-								             data_config["transforms_file"], 
-										     device="cpu", split="test", 
-										     img_wh=(w,h), 
-										     scale=object_size, 
-										     n_chan=c)
+
+		if "au" in data_name:
+			testing_dataset = EMDataset(device,data_config["images_path"],data_config["angles_path"],data_config["img_size"], split="test")
+		else:
+			testing_dataset = ProjectionsDataset(data_name, data_config["transforms_file"], device="cpu", split="test",img_wh=(w,h), scale=object_size, n_chan=c)
 		
-		for img_index in range(1):
+		
+		for img_index in range(10):
 			test_loss, imgs = test_model(model=trained_model, dataset=testing_dataset, img_index=img_index, hn=near, hf=far, device=test_device, nb_bins=output["samples_per_ray"], H=h, W=w)
 			cpu_imgs = [img.data.reshape(h, w).clamp(0.0, 1.0).detach().cpu().numpy() for img in imgs]
 			# train_img = training_im.reshape(h, w, 3)
