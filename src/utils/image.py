@@ -1,4 +1,3 @@
-from enum import Enum
 
 def get_n_channels(mode):
     return {

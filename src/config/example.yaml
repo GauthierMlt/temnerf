@@ -21,7 +21,7 @@ encoding:
 
 
 optim:
-    training_epochs: 15
+    training_epochs: 20
     loss: L2
     milestones: [4, 8, 12]
     gamma: 0.5
@@ -30,13 +30,14 @@ optim:
     learning_rate: 0.001
     pixel_importance_sampling: false
     seed: 0
-    # checkpoint: outputs/2024-05-27/16-55-10/
-
+    # checkpoint: outputs/2024-06-21/17-58-25/checkpoints/nerf_model_4.pt
+    checkpoint: /home/multari/temnerf/outputs/2024-06-24/08-52-30/checkpoints/nerf_model_18.pt
 
 data:
-    dataset: walnut
+    # dataset: walnut
+    dataset: au_ag
     transforms_file: transforms
-    img_size: 1024
+    img_size: 128
     n_images: 75
     noise_level: 0
     images_path: data/Au_Ag/Serie_3_ali.tif

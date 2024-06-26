@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader, Dataset
 from data.datasets import get_params
 from utils.chart_writer import *
 from utils.sampling import get_samples_around_point
-
+from utils.debug import plot_rays
 
 class IndexedDataset(Dataset):
 	def __init__(self, data):
@@ -47,8 +47,7 @@ def get_voxels_in_slice(z0, device, resolution):
 	voxs = torch.stack([z,y,x],dim=2).reshape(-1, 3)
 	return voxs 
 
-def get_points_in_slice(dim, device, resolution):
-	plane = 0.5 # 1 - 92./331.
+def get_points_in_slice(dim, device, resolution, center_offset=0.5):
 	half_dx = 1./resolution[0]
 	half_dy = 1./resolution[1]
 	d1s = torch.linspace(0.+half_dx, 1.-half_dx, steps=resolution[0], device=device)
@@ -56,19 +55,22 @@ def get_points_in_slice(dim, device, resolution):
 	n_pixels = resolution[0] * resolution[1]
 	d1, d2 = torch.meshgrid(d1s, d2s, indexing='xy')
 	d0 = torch.zeros_like(d1) # ([z0], device=device).expand(n_pixels).reshape(x.shape)
-	d0 = d0 + plane # object centred at 0.5
+	d0 = d0 + center_offset # object centred at 0.5
 	if dim == 0: # x=0
 		points = torch.stack([d0,d1,d2], dim=2).reshape(-1, 3)
 	if dim == 1: # y=0
 		points = torch.stack([d1,d0,d2], dim=2).reshape(-1, 3)
 	if dim == 2: # z=0
 		points = torch.stack([d1,d2,d0], dim=2).reshape(-1, 3)
-	return points 
+	return points
 
 @torch.no_grad
 def get_points_along_rays(ray_origins, ray_directions, hn, hf, nb_bins):
 	device = ray_origins.device
 	t = torch.linspace(hn, hf, nb_bins, device=device).expand(ray_origins.shape[0], nb_bins)
+
+	# print(t.shape)
+	# print(ray_directions.shape)
 	# Perturb sampling along each ray.
 	mid = (t[:, :-1] + t[:, 1:]) / 2.
 	lower = torch.cat((t[:, :1], mid), -1)
@@ -77,6 +79,13 @@ def get_points_along_rays(ray_origins, ray_directions, hn, hf, nb_bins):
 	t = lower + (upper - lower) * u  # [batch_size, nb_bins]
 	delta = t[:, 1:] - t[:, :-1] # [batch_size, nb_bins-1]
 	x = ray_origins.unsqueeze(1) + t.unsqueeze(2) * ray_directions.unsqueeze(1)  # [batch_size, nb_bins, 3]
+
+	first_points = x[:,  0, :]  
+	last_points  = x[:, -1, :]  
+	first_last_points = torch.cat((first_points, last_points), dim=0)
+	# print(first_points)
+	plot_rays(ray_origins.cpu(), ray_directions.cpu(), first_last_points.cpu(), show_directions=True, show_coordinate_frame=True, box_size=1)
+
 	# print(f"ray near/far is {x[1,0,:]}/{x[1,-1,:]	}")
 	return x.reshape(-1, 3), delta
 
@@ -111,21 +120,23 @@ def render_slice(model, dim, device, resolution, voxel_grid, samples_per_point):
 	delta = 1. / resolution[0]
 
 	# In general we have too many points to put directly on gpu (res**2 * samples_per_point), so put them on cpu then calculate on gpu in batches
-	points = points.to('cpu') 
+	# points = points.to('cpu') 
 	samples = get_samples_around_point(points, delta, samples_per_point) # [nb_samples, nb_points, 3]
 	sigma = torch.empty((0,1), device='cpu')
 	samples = samples.reshape(nb_points*samples_per_point,3)
-	samples_dataset = SamplesDataset(samples)
-	samples_loader = DataLoader(samples_dataset, batch_size=100_000)
 
-	for batch in samples_loader:
-		batch = batch.to('cuda')
-		# print(f"GPU memory allocated after loading tensor (MB): {torch.cuda.memory_allocated()/1024**2:.1f}")
-		batch_sigma = model(batch).cpu()
-		sigma = torch.cat((sigma,batch_sigma),0)
-		# TODO: don't need to keep all samples, can do the
-		# averaging here
-		del batch
+	# try:
+	sigma = model(samples)
+	# except RuntimeError as e:
+	# 		if 'out of memory' in str(e):
+	# 			print('| WARNING: ran out of memory, retrying batch')
+	# for batch in tqdm(samples_loader, leave=False, desc="Rendering slice"):
+	# 	batch = batch.to(device)
+	# 	batch_sigma = model(batch)
+	# 	sigma = torch.cat((sigma,batch_sigma),0)
+	# 	# TODO: don't need to keep all samples, can do the
+	# 	# averaging here
+	# 	del batch
 
 	sigma = sigma.reshape(samples_per_point, -1) # [nb_points, samples_per_point]
 	sigma = torch.mean(sigma, dim=0)
@@ -139,15 +150,18 @@ def render_image(model, frame, **params):
 	hf = params["hf"]
 	hn = params["hn"]
 	nb_bins = params["nb_bins"]
-	MAX_BATCH_SIZE = 2500 # out-of-memory if we do any more
 
 	dataset = IndexedDataset(frame)
-	data = DataLoader(dataset, batch_size = MAX_BATCH_SIZE)
+	data = DataLoader(dataset, batch_size=10_000)
 	
 	img_tensor = torch.zeros_like(frame[...,6]) # single channel
 	for batch, idx in data:
 		ray_origins = batch[...,:3].squeeze(0).to(device)
 		ray_directions = batch[...,3:6].squeeze(0).to(device)
+
+		from utils.debug import plot_rays
+		plot_rays(ray_origins.cpu(), ray_directions.cpu(), show_box=False, show_directions=True)
+
 		regenerated_px_values = get_pixel_values(model, ray_origins, ray_directions, hn=hn, hf=hf, nb_bins=nb_bins)
 		img_tensor[idx,...] = regenerated_px_values.cpu()
 

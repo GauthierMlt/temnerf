@@ -32,7 +32,11 @@ def jaw(img, shape):
     img = np.float32(img)
     return img
 
-def au_ag(img, shape):
-    img = transform.resize(img, shape, anti_aliasing=True)
-    # img = np.float32(img)
+def au_ag(img: np.ndarray, shape: int | tuple):
+    # img = v2.ToImage()
+    img = v2.Resize(shape)(torch.from_numpy(img).reshape(1, 1, *img.shape)).squeeze().numpy()
+
+    if len(img.shape) == 2:
+        img = np.expand_dims(img, axis=-1) # (H, W, C) 
+
     return img
