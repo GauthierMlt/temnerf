@@ -1,5 +1,7 @@
 outputs/*
 data/*
+*.npy
+*.tiff
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
