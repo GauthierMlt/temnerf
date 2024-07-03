@@ -5,6 +5,8 @@ from PIL import Image
 import torch
 import os
 from torchvision.transforms import ToPILImage
+from utils.render import render_slice
+from utils.chart_writer import write_img
 
 def load_images(images_path: str, target_size: int) -> np.ndarray:
 
@@ -16,19 +18,15 @@ def load_images(images_path: str, target_size: int) -> np.ndarray:
         n_channels   =  get_n_channels(im.mode)
         tensor_shape = (im.n_frames, n_channels, target_size, target_size)
 
-        images = np.zeros(tensor_shape, dtype=np.uint8) # (frame, C, H, W)
+        # images = np.zeros(tensor_shape, dtype=np.uint8) # (frame, C, H, W)
+        images = torch.zeros(tensor_shape, dtype=torch.float32) # (frame, C, H, W)
 
         for i in range(im.n_frames):
             im.seek(i)
-            np_array = np.array(im)  # (H,W) if 1 channel, else (H, W, C) 
+            np_array = np.array(im)  # (H,W) if 1 channel, else (H, W, C)       
             image = transforms.au_ag(np_array, target_size)
-                
-            images[i] = image.transpose(2, 0, 1) #(C, H, W)
-
-    
-    # assert np.all((images >= 0.0) & (images <= 1.0)), \
-    #         'Tensor values are not normalized properly'
-    
+            images[i] = image
+            # images[i] = image.transpose(2, 0, 1) #(C, H, W)
     return images
 
 
@@ -39,6 +37,15 @@ def load_angles(angles_path: str) -> np.ndarray:
 
     return np.deg2rad(np.array([float(line.strip()) for line in lines], dtype=np.float64))
 
+def init_output_dir(out_path):
+
+	checkpoint_path = os.path.join(out_path, "checkpoints")
+	slices_path = os.path.join(out_path, "slices")
+
+	os.mkdir(checkpoint_path)
+	os.mkdir(slices_path)
+
+	return checkpoint_path, slices_path
 
 def save_slices_as_tiff(train_output, iteration, output_dir):
 
@@ -80,3 +87,20 @@ def save_tensor_as_image(tensor, iter, directory, prefix="train_proj", file_form
         for j in range(num_images):
             img = to_pil_image(tensor[i, j])
             img.save(os.path.join(directory, f"{iter:4g}_{prefix}_batch{i}_img{j}.{file_format}"))
+
+
+def write_slices(model, device, epoch, sub_epoch, output, out_dir, object_center):
+		MAX_BRIGHTNESS = 10.
+		resolution = (output["slice_resolution"], output["slice_resolution"])
+
+		if output["slices"]:
+			for axis, name in enumerate(['x','y','z']):
+				img = render_slice(model=model, 
+					               dim=axis, 
+								   device=device, 
+								   resolution=resolution, 
+								   voxel_grid=False, 
+								   samples_per_point = output["rays_per_pixel"],
+								   object_center=object_center)
+				img = img.data.clamp(0, 255.).cpu().numpy().reshape(resolution[0], resolution[1])/MAX_BRIGHTNESS
+				write_img(img, f'{out_dir}/slice_{name}_{epoch:04}_{sub_epoch:04}.png', verbose=False)

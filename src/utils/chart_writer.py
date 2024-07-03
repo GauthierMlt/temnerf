@@ -43,7 +43,6 @@ def write_imgs(data, path, title=None, show_training_img=False):
 		ax = fig.add_subplot(gs[0, i])
 		if i < 2:
 			ax.imshow(imgs[i].clip(0,1),cmap='Greys_r',vmin=0,vmax=1)
-			ax.scatter(px_vals[:,0],px_vals[:,1],c=colors,s=250)
 		else:
 			ax.imshow(imgs[i].clip(0,1),cmap='viridis')
 		ax.set_title(sub_tit)
@@ -69,8 +68,7 @@ def write_imgs(data, path, title=None, show_training_img=False):
 	ax.set_title("density along rays")
 
 	fig.suptitle(title, fontsize=18, fontweight="bold")
-	plt.savefig(path, bbox_inches='tight')
-	print(f"Image written to {path}")
+	plt.savefig(path, bbox_inches='tight')	# print(f"Image written to {path}")
 	plt.close()
 
 def write_img(img, path, verbose=True):

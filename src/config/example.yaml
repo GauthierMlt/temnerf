@@ -13,26 +13,24 @@ encoding:
     n_levels: 16
     n_features_per_level: 2
     log2_hashmap_size: 17
-    base_resolution: 32
+    base_resolution: 16
     per_level_scale: 1.5
     interpolation: Linear
-    n_frequencies: 32
+    n_frequencies: 16
     n_bins: 16
 
 
 optim:
-    training_epochs: 20
+    training_epochs: 10
     loss: L2
-    milestones: [4, 8, 12]
+    milestones: [2, 4, 8, 10]
     gamma: 0.5
     batchsize: 1024
     samples_per_ray: 192
-    learning_rate: 0.001
+    learning_rate: 0.0001 
     pixel_importance_sampling: false
     seed: 0
-    # checkpoint: outputs/2024-06-21/17-58-25/checkpoints/nerf_model_4.pt
-    checkpoint: /home/multari/temnerf/outputs/2024-06-24/08-52-30/checkpoints/nerf_model_18.pt
-
+    # checkpoint: /home/multari/temnerf/outputs/2024-07-03/proj20_batch1024_nerfoutX255_gtUINT8/checkpoints/nerf_model_19.pt
 data:
     # dataset: walnut
     dataset: au_ag
@@ -47,7 +45,7 @@ output:
     images: true
     slices: true
     samples_per_ray: 192
-    slice_resolution: 512
+    slice_resolution: 256
     rays_per_pixel: 16
     interval: 10
     intermediate_slices: false

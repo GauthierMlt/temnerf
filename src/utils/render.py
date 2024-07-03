@@ -6,6 +6,7 @@ from data.datasets import get_params
 from utils.chart_writer import *
 from utils.sampling import get_samples_around_point
 from utils.debug import plot_rays
+import utils.chart_writer as writer
 
 class IndexedDataset(Dataset):
 	def __init__(self, data):
@@ -64,6 +65,78 @@ def get_points_in_slice(dim, device, resolution, center_offset=0.5):
 		points = torch.stack([d1,d2,d0], dim=2).reshape(-1, 3)
 	return points
 
+def get_all_slices_along_z(device, resolution, center_offset=0.5):
+    half_dx = 1. / resolution
+    half_dy = 1. / resolution
+    half_dz = 1. / resolution
+    
+    d1s = torch.linspace(0. + half_dx, 1. - half_dx, steps=resolution, device=device)
+    d2s = torch.linspace(0. + half_dy, 1. - half_dy, steps=resolution, device=device)
+    d3s = torch.linspace(0. + half_dz, 1. - half_dz, steps=resolution, device=device)
+    
+    d1, d2, d3 = torch.meshgrid(d1s, d2s, d3s, indexing='ij')
+    d1, d2, d3 = d1.flatten(), d2.flatten(), d3.flatten()
+    
+    points = torch.stack([d1, d2, d3], dim=1)
+    points += center_offset
+    
+    return points
+
+def get_slice_along_z(slice_index, device, resolution, num_slices, center_offset=0.5):
+    half_dx = 1. / resolution[0]
+    half_dy = 1. / resolution[1]
+    dz = 1. / num_slices
+    z = dz * slice_index + dz / 2.0
+    
+    d1s = torch.linspace(0. + half_dx, 1. - half_dx, steps=resolution[0], device=device) + center_offset - 0.5
+    d2s = torch.linspace(0. + half_dy, 1. - half_dy, steps=resolution[1], device=device) + center_offset - 0.5
+    z = z + center_offset - 0.5
+    
+    d1, d2 = torch.meshgrid(d1s, d2s, indexing='ij')
+    d1, d2 = d1.flatten(), d2.flatten()
+    d3 = torch.full_like(d1, z)
+    
+    points = torch.stack([d1, d2, d3], dim=1)
+    
+    return points
+
+@torch.no_grad()
+def render_slice_from_points(model, points, device, resolution, samples_per_point):
+	nb_points = points.shape[0]
+	delta = 1. / resolution[0]
+
+	# In general we have too many points to put directly on gpu (res**2 * samples_per_point), so put them on cpu then calculate on gpu in batches
+	# points = points.to('cpu') 
+	samples = get_samples_around_point(points, delta, samples_per_point) # [nb_samples, nb_points, 3]
+	sigma = torch.empty((0,1), device=device)
+	samples = samples.reshape(nb_points*samples_per_point,3)
+
+	sigma = model(samples)
+
+	sigma = sigma.reshape(samples_per_point, -1) # [nb_points, samples_per_point]
+	sigma = torch.mean(sigma, dim=0)
+	return sigma # single channel
+
+def build_3d_model(model, device, config, out_dir):
+	resolution = config["output"]["slice_resolution"]
+	num_slices = resolution
+	volume = np.zeros((resolution, resolution, resolution), dtype=np.float32)
+	MAX_BRIGHTNESS = 10.0
+
+	from tqdm import tqdm
+	import os
+
+	for i in tqdm(range(num_slices)):
+		points = get_slice_along_z(i, device, (resolution, resolution), num_slices)
+		img = render_slice_from_points(model=model, points=points, device=device, resolution=(resolution, resolution), samples_per_point=config["output"]["rays_per_pixel"])
+		img = img.cpu().numpy().reshape(resolution, resolution) / MAX_BRIGHTNESS
+		volume[:, :, i] = img
+
+	filename = f'{config["network"]["n_hidden_layers"]}_{config["network"]["n_neurons"]}.npy'
+	filepath = os.path.join(out_dir, filename)
+	np.save(filepath, volume)
+	print(f"3D model saved to {os.path.join(out_dir, filepath)}")
+
 @torch.no_grad
 def get_points_along_rays(ray_origins, ray_directions, hn, hf, nb_bins):
 	device = ray_origins.device
@@ -80,11 +153,8 @@ def get_points_along_rays(ray_origins, ray_directions, hn, hf, nb_bins):
 	delta = t[:, 1:] - t[:, :-1] # [batch_size, nb_bins-1]
 	x = ray_origins.unsqueeze(1) + t.unsqueeze(2) * ray_directions.unsqueeze(1)  # [batch_size, nb_bins, 3]
 
-	first_points = x[:,  0, :]  
-	last_points  = x[:, -1, :]  
-	first_last_points = torch.cat((first_points, last_points), dim=0)
-	# print(first_points)
-	plot_rays(ray_origins.cpu(), ray_directions.cpu(), first_last_points.cpu(), show_directions=True, show_coordinate_frame=True, box_size=1)
+	# sampled_points_vect = torch.cat((x[:,  0, :]  , x[:, -1, :]  ), dim=0)
+	# plot_rays(ray_origins.cpu(), ray_directions.cpu(), sampled_points_vect.cpu(), show_origins=False, show_directions=False, directions_scale=1, show_coordinate_frame=True, box_size=1/np.sqrt(2), box_origin=0.5, show_box=True, coordinate_frame_size=0.1)
 
 	# print(f"ray near/far is {x[1,0,:]}/{x[1,-1,:]	}")
 	return x.reshape(-1, 3), delta
@@ -102,7 +172,7 @@ def get_pixel_values(nerf_model, ray_origins, ray_directions, hn, hf, nb_bins):
 	alpha = (sigma_mid * delta).unsqueeze(2)
 	# single channel
 	c = alpha.sum(dim=1).squeeze()/nb_bins
-
+	# print(c)
 	return c
 
 
@@ -114,15 +184,15 @@ def get_ray_sigma(model, points, device):
 	return sigma
 
 @torch.no_grad()
-def render_slice(model, dim, device, resolution, voxel_grid, samples_per_point):
-	points = get_points_in_slice(dim, device, resolution)
+def render_slice(model, dim, device, resolution, voxel_grid, samples_per_point, object_center):
+	points = get_points_in_slice(dim, device, resolution, center_offset=object_center)
 	nb_points = points.shape[0]
 	delta = 1. / resolution[0]
 
 	# In general we have too many points to put directly on gpu (res**2 * samples_per_point), so put them on cpu then calculate on gpu in batches
 	# points = points.to('cpu') 
 	samples = get_samples_around_point(points, delta, samples_per_point) # [nb_samples, nb_points, 3]
-	sigma = torch.empty((0,1), device='cpu')
+	sigma = torch.empty((0,1), device='cuda')
 	samples = samples.reshape(nb_points*samples_per_point,3)
 
 	# try:
@@ -152,20 +222,21 @@ def render_image(model, frame, **params):
 	nb_bins = params["nb_bins"]
 
 	dataset = IndexedDataset(frame)
-	data = DataLoader(dataset, batch_size=10_000)
+	data = DataLoader(dataset, batch_size=2_000_000)
 	
 	img_tensor = torch.zeros_like(frame[...,6]) # single channel
 	for batch, idx in data:
 		ray_origins = batch[...,:3].squeeze(0).to(device)
 		ray_directions = batch[...,3:6].squeeze(0).to(device)
 
-		from utils.debug import plot_rays
-		plot_rays(ray_origins.cpu(), ray_directions.cpu(), show_box=False, show_directions=True)
+		# from utils.debug import plot_rays
+		# plot_rays(ray_origins.cpu(), ray_directions.cpu(), show_box=False, show_directions=True)
 
 		regenerated_px_values = get_pixel_values(model, ray_origins, ray_directions, hn=hn, hf=hf, nb_bins=nb_bins)
 		img_tensor[idx,...] = regenerated_px_values.cpu()
 
 	return img_tensor
+
 
 
 @torch.no_grad()
@@ -175,6 +246,10 @@ def test_model(model, dataset, img_index, **render_params):
 	img_tensor = render_image(model, frame, **render_params)
 
 	gt = frame[...,6].squeeze(0)
+
+	if gt.max() > 1.:
+		gt /= 255.
+	
 	diff = (gt - img_tensor).abs()
 	loss = (diff ** 2).mean() 
 	test_loss = linear_to_db(loss)

@@ -51,11 +51,15 @@ def get_rays(directions, c2w):
     return rays_o, rays_d
 
 
-def create_geometry_vectors(angles: np.ndarray, 
-                            detector_spacing_X:float=1.0, 
-                            detector_spacing_Y:float=1.0) -> np.ndarray:
+def create_geometry_vectors_parallel(angles: np.ndarray, 
+                                     size: tuple,
+                                     detector_spacing_X:float=1.0, 
+                                     detector_spacing_Y:float=1.0) -> np.ndarray:
 
     vectors = np.zeros((len(angles), 12))
+
+    scale_factor_X = size[0]
+    scale_factor_Y = size[1]
 
     for i in range(len(angles)):
 
@@ -65,22 +69,61 @@ def create_geometry_vectors(angles: np.ndarray,
         vectors[i, 2] = 0
 
         # center of detector
-        vectors[i, 3] = 0
-        vectors[i, 4] = 0
-        vectors[i, 5] = 0
+        vectors[i, 3] = 0.5
+        vectors[i, 4] = 0.5
+        vectors[i, 5] = 0.5
 
         # vector from detector pixel (0,0) to (0,1)
-        vectors[i, 6] = np.cos(angles[i]) * detector_spacing_X
-        vectors[i, 7] = np.sin(angles[i]) * detector_spacing_X
+        vectors[i, 6] = np.cos(angles[i]) * detector_spacing_X / scale_factor_X
+        vectors[i, 7] = np.sin(angles[i]) * detector_spacing_X / scale_factor_X
         vectors[i, 8] = 0
 
         # vector from detector pixel (0,0) to (1,0)
         vectors[i, 9] = 0
         vectors[i, 10] = 0
-        vectors[i, 11] = detector_spacing_Y
+        vectors[i, 11] = detector_spacing_Y / scale_factor_Y
 
-    return vectors
+    return torch.tensor(vectors, dtype=torch.float32)
+
+def compute_rays(angles: list, size: int | tuple, geometry="parallel"):
+
+    if geometry != "parallel":
+        raise NotImplementedError()
+
+    n_projections = len(angles)
+
+    size = (size, size) if isinstance(size, int) else size
+
+    u, v = torch.meshgrid(torch.arange(-size[0]//2, size[0]//2), 
+                          torch.arange(-size[1]//2, size[1]//2), indexing='ij')
+
+    u = u.reshape(-1)
+    v = v.reshape(-1)
     
+    geometry_vectors = create_geometry_vectors_parallel(angles, size)
+
+    origins    = torch.zeros((n_projections, size[0] * size[1], 3), dtype=torch.float32)
+    directions = torch.zeros((n_projections, size[0] * size[1], 3), dtype=torch.float32)
+
+    for p in range(n_projections):
+        ray_direction = geometry_vectors[p, :3]
+        det_center    = geometry_vectors[p, 3:6]
+        proj_ox       = geometry_vectors[p, 6:9]
+        proj_oy       = geometry_vectors[p, 9:12]
+        
+        pixel_locations = det_center + u[:, None] * proj_ox + v[:, None] * proj_oy
+
+        origins[p]    = pixel_locations 
+        directions[p] = -ray_direction 
+
+    origins    = origins.reshape(-1, 3)
+    directions = directions.reshape(-1, 3)
+
+    directions_norm = torch.norm(directions, dim=1, keepdim=True)
+    directions = directions / directions_norm
+
+    return origins, directions
+
 def get_ray_directions_orthographic(H, W):
     """
     Get ray directions for all pixels in camera coordinate for orthographic projection.
@@ -96,26 +139,6 @@ def get_ray_directions_orthographic(H, W):
     i, j = grid.unbind(-1)
     directions = torch.stack([torch.zeros_like(i), torch.zeros_like(j), -torch.ones_like(i)], -1)
     return directions, (i+0.5)/W, (j+0.5)/H
-
-def get_rays_orthographic(directions, c2w):
-    """
-    Get ray origin and normalized directions in world coordinate for all pixels in one image for orthographic projection.
-
-    Inputs:
-        directions: (H, W, 3) precomputed ray directions in camera coordinate
-        c2w: (3, 4) transformation matrix from camera coordinate to world coordinate
-
-    Outputs:
-        rays_o: (H*W, 3), the origin of the rays in world coordinate
-        rays_d: (H*W, 3), the normalized direction of the rays in world coordinate
-    """
-
-    rays_d = directions @ c2w[:, :3].T
-    rays_d = rays_d / torch.norm(rays_d, dim=-1, keepdim=True)
-    rays_o = c2w[:, 3].expand(rays_d.shape)
-    rays_d = rays_d.view(-1, 3)
-    rays_o = rays_o.view(-1, 3)
-    return rays_o, rays_d
 
 def rotation_matrix_y(angle):
     """

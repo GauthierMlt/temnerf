@@ -1,4 +1,4 @@
-import open3d as o3d
+
 import torch
 import numpy as np
 import sys
@@ -6,20 +6,24 @@ import sys
 def plot_rays(origins, 
               directions, 
               additional_points=None,
+              show_origins=True,
               show_directions=False, 
               directions_scale=0.1, 
               directions_subsample=1,
               show_coordinate_frame=True,
-              coordinate_frame_size=1,
-              show_box=True,
-              box_size=1024,
+              coordinate_frame_size=0.5,
+              show_box=False,
+              box_size=1,
+              box_origin=0,
               exit_program=True):
+    
+    import open3d as o3d
     
     geometries = []
 
     if show_box:
         mesh_box = o3d.geometry.TriangleMesh.create_box(width=box_size, height=box_size, depth=box_size)
-        mesh_box.translate(np.array([-box_size / 2, -box_size / 2, -box_size / 2]))
+        mesh_box.translate(np.array([box_origin-box_size / 2, box_origin-box_size / 2, box_origin-box_size / 2]))
         mesh_box.compute_vertex_normals()
         geometries.append(mesh_box)
     
@@ -28,9 +32,10 @@ def plot_rays(origins,
                                                                              origin=[0, 0, 0])
         geometries.append(coordinate_frame)
 
-    point_cloud = o3d.geometry.PointCloud()
-    point_cloud.points = o3d.utility.Vector3dVector(origins)
-    geometries.append(point_cloud)
+    if show_origins:
+        point_cloud = o3d.geometry.PointCloud()
+        point_cloud.points = o3d.utility.Vector3dVector(origins)
+        geometries.append(point_cloud)
 
     if additional_points != None:
         half_idx = len(additional_points)//2
@@ -77,4 +82,13 @@ def plot_rays(origins,
     o3d.visualization.draw_geometries(geometries)
 
     if exit_program:
+        sys.exit()
+
+def plot_n_exit(image, end_prog=True, **params):
+    import matplotlib.pyplot as plt
+    import sys
+
+    plt.imshow(image, cmap="grey")
+    plt.show()
+    if end_prog:
         sys.exit()
