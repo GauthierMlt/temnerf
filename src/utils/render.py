@@ -117,7 +117,7 @@ def render_slice_from_points(model, points, device, resolution, samples_per_poin
 	sigma = torch.mean(sigma, dim=0)
 	return sigma # single channel
 
-def build_3d_model(model, device, config, out_dir):
+def build_volume(model, device, config, out_dir):
 	resolution = config["output"]["slice_resolution"]
 	num_slices = resolution
 	volume = np.zeros((resolution, resolution, resolution), dtype=np.float32)
@@ -126,7 +126,7 @@ def build_3d_model(model, device, config, out_dir):
 	from tqdm import tqdm
 	import os
 
-	for i in tqdm(range(num_slices)):
+	for i in tqdm(range(num_slices), desc="Building volume"):
 		points = get_slice_along_z(i, device, (resolution, resolution), num_slices)
 		img = render_slice_from_points(model=model, points=points, device=device, resolution=(resolution, resolution), samples_per_point=config["output"]["rays_per_pixel"])
 		img = img.cpu().numpy().reshape(resolution, resolution) / MAX_BRIGHTNESS
@@ -142,8 +142,6 @@ def get_points_along_rays(ray_origins, ray_directions, hn, hf, nb_bins):
 	device = ray_origins.device
 	t = torch.linspace(hn, hf, nb_bins, device=device).expand(ray_origins.shape[0], nb_bins)
 
-	# print(t.shape)
-	# print(ray_directions.shape)
 	# Perturb sampling along each ray.
 	mid = (t[:, :-1] + t[:, 1:]) / 2.
 	lower = torch.cat((t[:, :1], mid), -1)
@@ -154,7 +152,7 @@ def get_points_along_rays(ray_origins, ray_directions, hn, hf, nb_bins):
 	x = ray_origins.unsqueeze(1) + t.unsqueeze(2) * ray_directions.unsqueeze(1)  # [batch_size, nb_bins, 3]
 
 	# sampled_points_vect = torch.cat((x[:,  0, :]  , x[:, -1, :]  ), dim=0)
-	# plot_rays(ray_origins.cpu(), ray_directions.cpu(), sampled_points_vect.cpu(), show_origins=False, show_directions=False, directions_scale=1, show_coordinate_frame=True, box_size=1/np.sqrt(2), box_origin=0.5, show_box=True, coordinate_frame_size=0.1)
+	# plot_rays(ray_origins.cpu(), ray_directions.cpu(), sampled_points_vect.cpu(), show_origins=False, show_directions=False, directions_scale=1, show_coordinate_frame=True, box_size=1/np.sqrt(2), box_origin=0.5, show_box=True, coordinate_frame_size=0.1, exit_program=False)
 
 	# print(f"ray near/far is {x[1,0,:]}/{x[1,-1,:]	}")
 	return x.reshape(-1, 3), delta
@@ -224,7 +222,7 @@ def render_image(model, frame, **params):
 	dataset = IndexedDataset(frame)
 	data = DataLoader(dataset, batch_size=2_000_000)
 	
-	img_tensor = torch.zeros_like(frame[...,6]) # single channel
+	img_tensor = torch.zeros(H*W) # single channel
 	for batch, idx in data:
 		ray_origins = batch[...,:3].squeeze(0).to(device)
 		ray_directions = batch[...,3:6].squeeze(0).to(device)

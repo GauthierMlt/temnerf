@@ -1,7 +1,7 @@
 import numpy as np
 import plotly.graph_objects as go
 
-def display_3d_model(volume):
+def visualize_plotly(volume):
 
     x, y, z = np.mgrid[0:volume.shape[0], 0:volume.shape[1], 0:volume.shape[2]]
 
@@ -30,4 +30,4 @@ if __name__ == "__main__":
     volume = np.load(file_path)
     volume = np.maximum(volume, 0)
 
-    display_3d_model(volume)
+    visualize_plotly(volume)

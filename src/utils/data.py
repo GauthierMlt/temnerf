@@ -39,13 +39,16 @@ def load_angles(angles_path: str) -> np.ndarray:
 
 def init_output_dir(out_path):
 
-	checkpoint_path = os.path.join(out_path, "checkpoints")
-	slices_path = os.path.join(out_path, "slices")
+    additional_dirs = ["checkpoints", 
+                       "slices", 
+                       "volumes"]
 
-	os.mkdir(checkpoint_path)
-	os.mkdir(slices_path)
+    paths = [os.path.join(out_path, d) for d in additional_dirs]
 
-	return checkpoint_path, slices_path
+    for p in paths:
+        os.makedirs(p)
+
+    return paths
 
 def save_slices_as_tiff(train_output, iteration, output_dir):
 

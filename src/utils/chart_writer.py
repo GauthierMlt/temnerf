@@ -36,7 +36,7 @@ def write_imgs(data, path, title=None, show_training_img=False):
 	custom_cycler = cycler(color=colors)
 
 	# images
-	titles = ["out","test","diff"]
+	titles = ["Pred","Ground truth","diff"]
 	if show_training_img:
 		titles.append("example training")
 	for i, sub_tit in enumerate(titles):

@@ -11,3 +11,38 @@ def set_seed(seed):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
+def list_available_devices():
+    if torch.cuda.is_available():
+        gpu_devices = [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())]
+    else:
+        gpu_devices = []
+
+    cpu_device = "CPU"
+
+    devices = {
+        "CPU": cpu_device,
+        "CUDA": gpu_devices
+    }
+
+    return devices
+
+def get_model(encoding_config, network_config):
+    
+    try:
+        import tinycudann as tcnn
+        TINY_CUDA = True
+    except ImportError:
+        print("tiny-cuda-nn not found.  Performance will be significantly degraded.")
+        print("You can install tiny-cuda-nn from https://github.com/NVlabs/tiny-cuda-nn")
+        print("============================================================")
+        TINY_CUDA = False
+
+    from models.nerf import Nerf
+    
+    if TINY_CUDA:
+        return tcnn.NetworkWithInputEncoding(n_input_dims=3, 
+                                              n_output_dims=1, 
+                                              encoding_config=encoding_config, 
+                                              network_config=network_config)
+    else: 
+        return Nerf(encoding_config, network_config)
