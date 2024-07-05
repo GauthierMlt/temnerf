@@ -43,6 +43,13 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
 
+    print("Loading libraries...", end="\r", flush=True)
+    import torch
+    from utils.utils import get_model
+    from utils.ray import compute_rays
+    from utils.render import render_image
+    print("Loading libraries: Done")
+
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
     
@@ -59,6 +66,9 @@ if __name__ == "__main__":
     near = -1 / (np.sqrt(2))
     far  =  1 / (np.sqrt(2))
 
+    # near = -1 
+    # far  =  1 
+
     projections = torch.zeros((len(args.angles), size, size), dtype=torch.float)
     
     for angle in args.angles:
@@ -66,7 +76,7 @@ if __name__ == "__main__":
         ray_origins, ray_directions = compute_rays([np.deg2rad(angle)], size)
         data = torch.cat([ray_origins, ray_directions], dim=1)
         
-        print(f"Computing projection at angle {angle}")
+        print(f"Computing projection at angle {angle} degrees", end="\r", flush=True)
 
         img = render_image( model, 
                             data, 
@@ -87,4 +97,4 @@ if __name__ == "__main__":
         save_path = os.path.join(output_dir, f"{angle:3g}_deg.tiff")
         plt.imsave(save_path, img, cmap="Greys_r")
         plt.show()
-        print("Done")
+        print(f"Computing projection at angle {angle} degrees: Done")
