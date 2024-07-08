@@ -5,6 +5,7 @@ import sys
 @torch.no_grad
 def plot_rays(origins, 
               directions, 
+              sampling_points=None,
               additional_points=None,
               show_origins=True,
               show_directions=False, 
@@ -37,10 +38,10 @@ def plot_rays(origins,
         point_cloud.points = o3d.utility.Vector3dVector(origins)
         geometries.append(point_cloud)
 
-    if additional_points != None:
-        half_idx = len(additional_points)//2
-        additional_o = additional_points[:half_idx, :]
-        additional_d = additional_points[half_idx:, :]
+    if sampling_points != None:
+        half_idx = len(sampling_points)//2
+        additional_o = sampling_points[:half_idx, :]
+        additional_d = sampling_points[half_idx:, :]
 
         pcd2 = o3d.geometry.PointCloud()
         pcd2.points = o3d.utility.Vector3dVector(additional_o)
@@ -57,7 +58,17 @@ def plot_rays(origins,
         geometries.append(pcd2)
         geometries.append(line_set)
     
-    
+    if additional_points != None:
+
+        pcd3 = o3d.geometry.PointCloud()
+        pcd3.points = o3d.utility.Vector3dVector(additional_points)
+
+        colors = np.zeros((len(additional_points), 3))
+        pcd3.colors = o3d.utility.Vector3dVector(colors)
+
+        geometries.append(pcd3)
+
+
     if show_directions:
         lines = []
         line_points = []

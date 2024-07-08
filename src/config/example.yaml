@@ -21,11 +21,11 @@ encoding:
 
 
 optim:
-    training_epochs: 10
+    training_epochs: 1
     loss: L2
     milestones: [2, 4, 8, 10]
     gamma: 0.5
-    batchsize: 2048
+    batchsize: 512
     samples_per_ray: 192
     learning_rate: 0.0001 
     pixel_importance_sampling: false
@@ -36,7 +36,7 @@ data:
     # dataset: walnut
     dataset: au_ag
     transforms_file: transforms
-    img_size: 128
+    img_size: 512
     n_images: 75
     noise_level: 0
     images_path: data/Au_Ag/Serie_3_ali.tif
@@ -45,9 +45,9 @@ data:
 output:
     images: true
     slices: true
-    volume: false
+    volume: true
     samples_per_ray: 192
-    slice_resolution: 1024
+    slice_resolution: 512
     rays_per_pixel: 16
     interval: 10
     intermediate_slices: false
