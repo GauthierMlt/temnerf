@@ -8,6 +8,9 @@ from utils.sampling import get_samples_around_point
 from utils.debug import plot_rays
 import utils.chart_writer as writer
 
+from tqdm import tqdm
+import os
+
 class IndexedDataset(Dataset):
 	def __init__(self, data):
 		self.data = data
@@ -65,36 +68,39 @@ def get_points_in_slice(dim, device, resolution, center_offset=0.5):
 		points = torch.stack([d1,d2,d0], dim=2).reshape(-1, 3)
 	return points
 
-def get_all_slices_along_z(device, resolution, center_offset=0.5):
-    half_dx = 1. / resolution
-    half_dy = 1. / resolution
-    half_dz = 1. / resolution
+def get_all_volume_points(device, resolution, num_slices, center_offset=0.5):
+    half_dx = 1. / resolution[0]
+    half_dz = 1. / resolution[1]
+    dy = 1. / num_slices
+
+    d1s = torch.linspace(0. + half_dx, 1. - half_dx, steps=resolution[0], device=device) + center_offset - 0.5
+    d3s = torch.linspace(0. + half_dz, 1. - half_dz, steps=resolution[1], device=device) + center_offset - 0.5
+    ys = torch.linspace(dy / 2.0, 1.0 - dy / 2.0, steps=num_slices, device=device) + center_offset - 0.5
+
+    d1, d3 = torch.meshgrid(d1s, d3s, indexing='ij')
+    d1, d3 = d1.flatten(), d3.flatten()
     
-    d1s = torch.linspace(0. + half_dx, 1. - half_dx, steps=resolution, device=device)
-    d2s = torch.linspace(0. + half_dy, 1. - half_dy, steps=resolution, device=device)
-    d3s = torch.linspace(0. + half_dz, 1. - half_dz, steps=resolution, device=device)
-    
-    d1, d2, d3 = torch.meshgrid(d1s, d2s, d3s, indexing='ij')
-    d1, d2, d3 = d1.flatten(), d2.flatten(), d3.flatten()
+    d1 = d1.unsqueeze(0).repeat(num_slices, 1).flatten()
+    d3 = d3.unsqueeze(0).repeat(num_slices, 1).flatten()
+    d2 = ys.repeat_interleave(resolution[0] * resolution[1])
     
     points = torch.stack([d1, d2, d3], dim=1)
-    points += center_offset
     
-    return points
+    return points.reshape(num_slices, -1, 3)
 
-def get_slice_along_z(slice_index, device, resolution, num_slices, center_offset=0.5):
+def get_slice_along_y(slice_index, device, resolution, num_slices, center_offset=0.5):
     half_dx = 1. / resolution[0]
-    half_dy = 1. / resolution[1]
-    dz = 1. / num_slices
-    z = dz * slice_index + dz / 2.0
+    half_dz = 1. / resolution[1]
+    dy = 1. / num_slices
+    y = dy * slice_index + dy / 2.0
     
     d1s = torch.linspace(0. + half_dx, 1. - half_dx, steps=resolution[0], device=device) + center_offset - 0.5
-    d2s = torch.linspace(0. + half_dy, 1. - half_dy, steps=resolution[1], device=device) + center_offset - 0.5
-    z = z + center_offset - 0.5
+    d3s = torch.linspace(0. + half_dz, 1. - half_dz, steps=resolution[1], device=device) + center_offset - 0.5
+    y = y + center_offset - 0.5
     
-    d1, d2 = torch.meshgrid(d1s, d2s, indexing='ij')
-    d1, d2 = d1.flatten(), d2.flatten()
-    d3 = torch.full_like(d1, z)
+    d1, d3 = torch.meshgrid(d1s, d3s, indexing='ij')
+    d1, d3 = d1.flatten(), d3.flatten()
+    d2 = torch.full_like(d1, y)
     
     points = torch.stack([d1, d2, d3], dim=1)
     
@@ -121,21 +127,28 @@ def build_volume(model, device, config, out_dir):
 	resolution = config["output"]["slice_resolution"]
 	num_slices = resolution
 	volume = np.zeros((resolution, resolution, resolution), dtype=np.float32)
-	MAX_BRIGHTNESS = 10.0
-
-	from tqdm import tqdm
-	import os
+	slices = get_all_volume_points(device, (resolution, resolution), num_slices)
 
 	for i in tqdm(range(num_slices), desc="Building volume"):
-		points = get_slice_along_z(i, device, (resolution, resolution), num_slices)
+		points = slices[i]
+		# from utils.debug import plot_rays
+		# plot_rays(torch.zeros(1), torch.zeros(1), additional_points=slices.reshape(-1, 3)[::10].cpu(), show_origins=False, show_directions=False)
+
 		img = render_slice_from_points(model=model, points=points, device=device, resolution=(resolution, resolution), samples_per_point=config["output"]["rays_per_pixel"])
-		img = img.cpu().numpy().reshape(resolution, resolution) / MAX_BRIGHTNESS
-		volume[:, :, i] = img
+		
+		img = img.clamp(0., 255.).reshape(resolution, resolution).cpu().numpy()
+		volume[:, i, :] = img
 
 	filename = f'{config["network"]["n_hidden_layers"]}_{config["network"]["n_neurons"]}.npy'
 	filepath = os.path.join(out_dir, filename)
+	
 	np.save(filepath, volume)
 	print(f"3D model saved to {os.path.join(out_dir, filepath)}")
+
+	try:
+		os.system(f'xdg-open {os.path.realpath(out_dir)}')
+	except:
+		pass
 
 @torch.no_grad
 def get_points_along_rays(ray_origins, ray_directions, hn, hf, nb_bins):
@@ -210,7 +223,7 @@ def render_slice(model, dim, device, resolution, voxel_grid, samples_per_point, 
 	sigma = torch.mean(sigma, dim=0)
 	return sigma # single channel
 
-@torch.no_grad()	
+@torch.no_grad	
 def render_image(model, frame, **params):
 	device = params["device"]
 	H = params["H"]
@@ -220,10 +233,10 @@ def render_image(model, frame, **params):
 	nb_bins = params["nb_bins"]
 
 	dataset = IndexedDataset(frame)
-	data = DataLoader(dataset, batch_size=2_000_000)
+	data = DataLoader(dataset, batch_size=100_000)
 	
 	img_tensor = torch.zeros(H*W) # single channel
-	for batch, idx in data:
+	for batch, idx in tqdm(data):
 		ray_origins = batch[...,:3].squeeze(0).to(device)
 		ray_directions = batch[...,3:6].squeeze(0).to(device)
 
