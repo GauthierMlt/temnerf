@@ -3,6 +3,7 @@ data/*
 *.npy
 *.tiff
 projections/*
+__local__*
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
