@@ -53,7 +53,6 @@ class ProjectionsDataset(Dataset):
             sampled_indices = np.linspace(0, len(frames) - 1, min(self.n_train, len(frames)), endpoint=False).astype(int)
 
             sampled_frames  = [frames[i] for i in sampled_indices]
-            # sampled_frames = frames[:240:3]
             for _, frame in enumerate(tqdm(sampled_frames, desc="Loading training data")):
 
                 rays_o, rays_d = self.process_rays(frame)

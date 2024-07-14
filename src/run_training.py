@@ -4,13 +4,13 @@ from tqdm import tqdm
 import torch.nn as nn
 from torch.utils.data import DataLoader, WeightedRandomSampler
 import os
-
+import torchmetrics
 	
 from data.projectionsdataset import ProjectionsDataset
 from data.emdataset import EMDataset
 from data.datasets import get_params
 from utils.phantom import get_sigma_gt
-from utils.render import get_points_along_rays, get_pixel_values, get_ray_sigma, test_model, build_volume
+from utils.render import get_points_along_rays, get_pixel_values, get_ray_sigma, test_model, build_volume, get_density_mip_nerf
 from utils.chart_writer import linear_to_db, write_imgs, get_px_values
 from utils.utils import set_seed, get_model
 from utils.debug import plot_rays, plot_n_exit
@@ -38,6 +38,8 @@ def run(_cfg: DictConfig):
 		
 	model = get_model(OmegaConf.to_container(_cfg.encoding), 
 				      OmegaConf.to_container(_cfg.network))
+	
+	model.to(device)
 	data_config = _cfg["data"]
 
 	data_name = data_config["dataset"]
@@ -46,19 +48,22 @@ def run(_cfg: DictConfig):
 	c, radius, object_size, aspect_ratio = get_params(data_name)
 
 	w = int(h*aspect_ratio)
+	
+	object_center = 0.5 if "au" in data_name else 0.5
 
 	if "au" in data_name:
-		near = -1 / (np.sqrt(2))
+		near = -1 / (np.sqrt(2)) 
 		far  =  1 / (np.sqrt(2))
 
-		# near = -1 
-		# far  = 1 
+		# near = -0.5
+		# far  = 0.5
+
+		near = -1
+		far  = 1
 	else:
 		near = 0.5*radius - 0.5*object_size 
 		far  = 0.5*radius + 0.5*object_size 
 
-
-	object_center = 0.5 if "au" in data_name else 0.5
 
 	checkpoint_path, slices_path, volume_path = init_output_dir(out_dir)
 
@@ -102,7 +107,7 @@ def run(_cfg: DictConfig):
 		train_psnr = torch.zeros(total_batches, dtype=torch.float16, device=device)
 
 		early_stop = False
-
+	
 		with tqdm(range(optim["training_epochs"]), desc="Epochs") as t:
 			for ep in t:
 
@@ -112,8 +117,14 @@ def run(_cfg: DictConfig):
 					ray_directions 		   = batch[:, 3:6].to(device)
 					ground_truth_px_values = batch[:, 6].to(device)
 					
-					regenerated_px_values = get_pixel_values(model, ray_origins, ray_directions, hn=near, hf=far, nb_bins=optim["samples_per_ray"])
-					# print(regenerated_px_values.min(), regenerated_px_values.max())
+					if "au" in data_name:
+						ground_truth_px_values = ground_truth_px_values /255.
+
+					regenerated_px_values = get_pixel_values(model, ray_origins, ray_directions, hn=near, hf=far, nb_bins=optim["samples_per_ray"], debug=False)
+					# regenerated_px_values = get_density_mip_nerf(model, ray_origins, ray_directions, hn=near, hf=far, nb_bins=optim["samples_per_ray"], mip_level=1, debug=False)
+
+
+					
 					loss = loss_function(regenerated_px_values*255., ground_truth_px_values)
 					
 					if loss.isnan():
@@ -128,10 +139,12 @@ def run(_cfg: DictConfig):
 					batch_idx = ep_idx + batch_num
 					train_psnr[batch_idx] = linear_to_db(loss).item()
 
-					if (batch_num % 500) == 0:
+					if (batch_idx % 500) == 0:
+						# print(f"\n{regenerated_px_values.min().item():2f}, {regenerated_px_values.max().item():2f}, {ground_truth_px_values.min().item():2f}, {ground_truth_px_values.max().item():2f}")
 						tf_writer.add_scalar("loss", loss, batch_idx) 
 						tf_writer.add_scalar("PSNR (db)", train_psnr[batch_idx], batch_idx) 
-				
+
+					# torch.cuda.empty_cache()
 				if early_stop:
 					break
 

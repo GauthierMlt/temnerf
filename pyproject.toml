@@ -5,15 +5,9 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "temnerf"
 version = "0.0.1"
-# dependencies = [
-#     "numpy",
-#     "hydra-core",
-#     "torch",
-#     "torchvision",
-#     "scikit-image",
-#     "matplotlib",
-#     "kornia"
-# ]
+dependencies = [
+    "tinycudann @ git+https://github.com/NVlabs/tiny-cuda-nn/#subdirectory=bindings/torch"
+]
 
 description = "Package containing the code required to run experiments on the application of NeRFs for reconstruction of Electronic Tomography data"
 readme = "README.md"

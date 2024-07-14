@@ -15,7 +15,7 @@ def plot_rays(origins,
               coordinate_frame_size=0.5,
               show_box=False,
               box_size=1,
-              box_origin=0,
+              box_origin=0.5,
               exit_program=True):
     
     import open3d as o3d

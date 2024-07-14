@@ -88,7 +88,8 @@ class SliceViewer(QMainWindow):
             self.display_image(slice_)
 
     def display_image(self, slice_):
-        slice_normalized = (255 * (slice_ - np.min(slice_)) / np.ptp(slice_)).astype(np.uint8)
+        slice_[slice_ < 0] = 0
+        slice_normalized = (255 *(slice_ - np.min(slice_)) / np.ptp(slice_)).astype(np.uint8)
         height, width = slice_normalized.shape
         q_image = QImage(slice_normalized.data, width, height, slice_normalized.strides[0], QImage.Format_Grayscale8)
 

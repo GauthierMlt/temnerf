@@ -2,7 +2,7 @@ network:
     # otype: CutlassMLP
     otype: FullyFusedMLP
     activation: ReLU
-    output_activation: None
+    output_activation: LeakyReLU
     n_neurons: 128
     n_hidden_layers: 8
 
@@ -21,13 +21,13 @@ encoding:
 
 
 optim:
-    training_epochs: 1
+    training_epochs: 15
     loss: L2
-    milestones: [2, 4, 8, 10]
+    milestones: [5, 10]
     gamma: 0.5
-    batchsize: 512
+    batchsize: 1024
     samples_per_ray: 192
-    learning_rate: 0.0001 
+    learning_rate: 1e-3
     pixel_importance_sampling: false
     seed: 0
     # checkpoint: /home/multari/temnerf/outputs/2024-07-03/proj20_batch1024_nerfoutX255_gtUINT8/checkpoints/nerf_model_19.pt
@@ -36,18 +36,23 @@ data:
     # dataset: walnut
     dataset: au_ag
     transforms_file: transforms
-    img_size: 512
-    n_images: 75
+    img_size: 256
+    n_images: 9999
     noise_level: 0
-    images_path: data/Au_Ag/Serie_3_ali.tif
-    angles_path: data/Au_Ag/TiltAngle_ali.txt
+    # images_path: data/Au_Ag/Serie_3_ali.tif
+    # angles_path: data/Au_Ag/TiltAngle_ali.txt
+    # images_path: data/shepp_projections/shepp_projection_512_120.tiff
+    # images_path: data/shepp_projections/shepp_projections_512_120_8bit.tiff
+    # angles_path: data/shepp_projections/angles_120.txt
+    images_path: data/benchmark/au_ag_sirt_180_8bit.tiff
+    angles_path: data/benchmark/au_ag_sirt_180.txt
 
 output:
     images: true
     slices: true
     volume: true
     samples_per_ray: 192
-    slice_resolution: 512
+    slice_resolution: 256
     rays_per_pixel: 16
     interval: 10
     intermediate_slices: false

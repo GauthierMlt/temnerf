@@ -21,9 +21,9 @@ class EMDataset(Dataset):
         self.device: torch.device   = device
         self.split: str             = split
 
-        self.images: torch.Tensor           = None
-        self.angles: np.ndarray             = None
-        self.data: torch.Tensor             = None
+        self.images: torch.Tensor   = None
+        self.angles: np.ndarray     = None
+        self.data: torch.Tensor     = None
         
         self.read_data(images_path, angles_path, n_projections)
         self.init_data()
@@ -39,11 +39,11 @@ class EMDataset(Dataset):
             if n_projections >= len(self.angles):
                 return
 
-            indices = np.linspace(0, len(self.angles)-1, n_projections, dtype=int)
+            indices = np.linspace(0, len(self.angles)-1, n_projections, endpoint=True, dtype=int)
             
             self.images = self.images[indices]
             self.angles = self.angles[indices]
-    
+
 
     @torch.no_grad
     def init_data(self):
@@ -54,7 +54,6 @@ class EMDataset(Dataset):
             ray_origins,
             ray_directions,
             self.images.flatten().unsqueeze(1)
-        # ], dim=1).to(self.device)
         ], dim=1)
 
 

@@ -54,7 +54,8 @@ def get_rays(directions, c2w):
 def create_geometry_vectors_parallel(angles: np.ndarray, 
                                      size: tuple,
                                      detector_spacing_X:float=1.0, 
-                                     detector_spacing_Y:float=1.0) -> np.ndarray:
+                                     detector_spacing_Y:float=1.0,
+                                     detector_center:int=0.5) -> torch.Tensor:
 
     vectors = np.zeros((len(angles), 12))
 
@@ -69,19 +70,19 @@ def create_geometry_vectors_parallel(angles: np.ndarray,
         vectors[i, 2] = 0
 
         # center of detector
-        vectors[i, 3] = 0.5
-        vectors[i, 4] = 0.5
-        vectors[i, 5] = 0.5
+        vectors[i, 3] = detector_center #+ 3 * np.sin(angles[i])
+        vectors[i, 4] = detector_center #+ 3 * -np.cos(angles[i])
+        vectors[i, 5] = detector_center
 
         # vector from detector pixel (0,0) to (0,1)
         vectors[i, 6] = np.cos(angles[i]) * detector_spacing_X / scale_factor_X
-        vectors[i, 7] = np.sin(angles[i]) * detector_spacing_X / scale_factor_X
+        vectors[i, 7] = np.sin(angles[i]) * detector_spacing_X / scale_factor_X 
         vectors[i, 8] = 0
 
         # vector from detector pixel (0,0) to (1,0)
         vectors[i, 9] = 0
         vectors[i, 10] = 0
-        vectors[i, 11] = detector_spacing_Y / scale_factor_Y
+        vectors[i, 11] = detector_spacing_Y / scale_factor_Y 
 
     return torch.tensor(vectors, dtype=torch.float32)
 
@@ -95,8 +96,8 @@ def compute_rays(angles: list, size: int | tuple, geometry="parallel"):
     size = (size, size) if isinstance(size, int) else size
 
     u, v = torch.meshgrid(torch.arange(-size[0]//2, size[0]//2), 
-                          torch.arange(-size[1]//2, size[1]//2), indexing='ij')
-
+                          torch.arange(-size[1]//2, size[1]//2), indexing='xy')
+    
     u = u.reshape(-1)
     v = v.reshape(-1)
     
@@ -113,8 +114,8 @@ def compute_rays(angles: list, size: int | tuple, geometry="parallel"):
         
         pixel_locations = det_center + u[:, None] * proj_ox + v[:, None] * proj_oy
 
-        origins[p]    = pixel_locations 
-        directions[p] = -ray_direction 
+        origins[p]    = pixel_locations
+        directions[p] = -ray_direction
 
     origins    = origins.reshape(-1, 3)
     directions = directions.reshape(-1, 3)
@@ -122,6 +123,8 @@ def compute_rays(angles: list, size: int | tuple, geometry="parallel"):
     directions_norm = torch.norm(directions, dim=1, keepdim=True)
     directions = directions / directions_norm
 
+    from utils.debug import plot_rays
+    # plot_rays(origins[::], directions[::], show_directions=True, show_box=False)
     return origins, directions
 
 def get_ray_directions_orthographic(H, W):

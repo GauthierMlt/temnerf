@@ -68,7 +68,7 @@ def write_imgs(data, path, title=None, show_training_img=False):
 	ax.set_title("density along rays")
 
 	fig.suptitle(title, fontsize=18, fontweight="bold")
-	plt.savefig(path, bbox_inches='tight')	# print(f"Image written to {path}")
+	plt.savefig(path)	# print(f"Image written to {path}")
 	plt.close()
 
 def write_img(img, path, verbose=True):
@@ -76,10 +76,9 @@ def write_img(img, path, verbose=True):
 	ax.imshow(img, cmap='gray', origin='lower') # to show images the correct way up!
 	ax.invert_xaxis()
 	plt.axis('off')
-	plt.savefig(path, bbox_inches='tight')
+	plt.savefig(path, bbox_inches='tight', pad_inches=0)
 	if verbose:
 		print(f"Image {img.shape[0]} x {img.shape[1]} written to {path}")
-	plt.close()
 
 # def linear_to_db(x):
 # 	return -10.*np.log(x)/np.log(10.)

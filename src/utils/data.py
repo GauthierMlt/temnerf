@@ -12,8 +12,8 @@ def load_images(images_path: str, target_size: int) -> np.ndarray:
 
     with Image.open(images_path) as im:
 
-        assert im.mode == "L", \
-                f"Image mode '{im.mode}' different than the expected 'L' (8-bit grayscale)"
+        # assert im.mode == "L", \
+        #         f"Image mode '{im.mode}' different than the expected 'L' (8-bit grayscale)"
 
         n_channels   =  get_n_channels(im.mode)
         tensor_shape = (im.n_frames, n_channels, target_size, target_size)
@@ -103,7 +103,6 @@ def write_slices(model, device, epoch, sub_epoch, output, out_dir, object_center
 								   device=device, 
 								   resolution=resolution, 
 								   voxel_grid=False, 
-								   samples_per_point = output["rays_per_pixel"],
-								   object_center=object_center)
+								   samples_per_point = output["rays_per_pixel"])
 				img = img.data.clamp(0, 255.).cpu().numpy().reshape(resolution[0], resolution[1])/MAX_BRIGHTNESS
 				write_img(img, f'{out_dir}/slice_{name}_{epoch:04}_{sub_epoch:04}.png', verbose=False)
