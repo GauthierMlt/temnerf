@@ -84,9 +84,8 @@ def write_img(img, path, verbose=True):
 # 	return -10.*np.log(x)/np.log(10.)
 
 @torch.no_grad
-def linear_to_db(x):
-	# return -10. * torch.log(x) / torch.log(torch.tensor(10.))
-	return -10. * torch.log10(2*x)
+def compute_psnr(mse, max_val=1):
+	return 10 * torch.log10(max_val ** 2 / mse)
 
 
 if __name__ == '__main__':

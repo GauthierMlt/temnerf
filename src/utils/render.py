@@ -73,28 +73,6 @@ def get_points_in_slice(dim, device, resolution, center_offset=0.5):
     
     return points
 
-# def get_points_in_slice(dim, device, resolution, center_offset=0.5):
-#     half_dx = 1.0 / resolution[0]
-#     half_dy = 1.0 / resolution[1]
-    
-#     d1s = torch.linspace(0.0 + half_dx, 1.0 - half_dx, steps=resolution[0], device=device)
-#     d2s = torch.linspace(0.0 + half_dy, 1.0 - half_dy, steps=resolution[1], device=device)
-    
-#     d1, d2 = torch.meshgrid(d1s, d2s, indexing='xy')
-    
-#     d0 = torch.full_like(d1, center_offset)
-    
-#     if dim == 0:  # x=0
-#         points = torch.stack([d0, d1, d2], dim=2).reshape(-1, 3)
-#     elif dim == 1:  # y=0
-#         points = torch.stack([d1, d0, d2], dim=2).reshape(-1, 3)
-#     elif dim == 2:  # z=0
-#         points = torch.stack([d1, d2, d0], dim=2).reshape(-1, 3)
-#     else:
-#         raise ValueError("dim should be 0, 1, or 2")
-    
-#     return points
-
 def sample_volume(device, resolution, num_slices, center_offset=0.5):
     half_dx = 1. / resolution[0]
     half_dz = 1. / resolution[1]
@@ -132,6 +110,7 @@ def render_slice_from_points(model, points, device, resolution, samples_per_poin
 	sigma = torch.mean(sigma, dim=0)
 	return sigma # single channel
 
+@torch.no_grad()
 def build_volume(model, device, config, out_dir):
 	resolution = config["output"]["slice_resolution"]
 	num_slices = resolution
@@ -154,10 +133,10 @@ def build_volume(model, device, config, out_dir):
 	np.save(filepath, volume)
 	print(f"3D model saved to {os.path.join(out_dir, filepath)}")
 
-	# try:
-	# 	os.system(f'xdg-open {os.path.realpath(out_dir)}')
-	# except:
-	# 	pass
+	try:
+		os.system(f'xdg-open {os.path.realpath(out_dir)}')
+	except:
+		pass
 
 def get_points_along_rays_mip(ray_origins, ray_directions, hn, hf, nb_bins, mip_level, debug=False):
     device = ray_origins.device
@@ -206,7 +185,7 @@ def get_density_mip_nerf(nerf_model, ray_origins, ray_directions, hn, hf, nb_bin
 
     return weights.sum(dim=1)  # Sum the weights along the ray
 
-@torch.no_grad
+@torch.no_grad()
 def get_points_along_rays(ray_origins, ray_directions, hn, hf, nb_bins, debug=False):
 	device = ray_origins.device
 	t = torch.linspace(hn, hf, nb_bins, device=device).expand(ray_origins.shape[0], nb_bins)
@@ -279,6 +258,7 @@ def render_slice(model, dim, device, resolution, voxel_grid, samples_per_point):
 	sigma = sigma.reshape(samples_per_point, -1) # [nb_points, samples_per_point]
 	sigma = torch.mean(sigma, dim=0)
 	return sigma # single channel
+
 # def render_slice(model, dim, device, resolution, voxel_grid, samples_per_point):
 #     points = get_points_in_slice(dim, device, resolution)
 #     nb_points = points.shape[0]
@@ -306,7 +286,7 @@ def render_slice(model, dim, device, resolution, voxel_grid, samples_per_point):
 #     return sigma  # single channel
 
 
-@torch.no_grad	
+@torch.no_grad()
 def render_image(model, frame, **params):
 	device = params["device"]
 	H = params["H"]
@@ -316,7 +296,7 @@ def render_image(model, frame, **params):
 	nb_bins = params["nb_bins"]
 
 	dataset = IndexedDataset(frame)
-	data = DataLoader(dataset, batch_size=200_000)
+	data = DataLoader(dataset, batch_size=5_000)
 	
 	img_tensor = torch.zeros(H*W) # single channel
 	for batch, idx in tqdm(data):
@@ -337,18 +317,18 @@ def render_image(model, frame, **params):
 def test_model(model, dataset, img_index, **render_params):
 	frame = dataset[img_index]
 
-	img_tensor = render_image(model, frame, **render_params) 
+	img_tensor = render_image(model, frame, **render_params)
 
-	img_tensor = (img_tensor - torch.min(img_tensor)) / (torch.max(img_tensor) - torch.min(img_tensor))
+	# img_tensor = (img_tensor - torch.min(img_tensor)) / (torch.max(img_tensor) - torch.min(img_tensor))
 		
 	# plt.imshow(img_tensor.reshape(render_params["H"],render_params["W"]).cpu(), cmap="gray")
 	# plt.show()
 	gt = frame[...,6].squeeze(0)
 
-	gt = (gt - torch.min(gt)) / (torch.max(gt) - torch.min(gt))
-	
+	# gt = (gt - torch.min(gt)) / (torch.max(gt) - torch.min(gt))
+
 	diff = (gt - img_tensor).abs()
 	loss = (diff ** 2).mean() 
-	test_loss = linear_to_db(loss)
+	test_loss = compute_psnr(loss)
 	return test_loss, [img_tensor,gt,diff]
 	
