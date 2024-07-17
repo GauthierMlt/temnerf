@@ -58,7 +58,13 @@ class SliceViewer(QMainWindow):
         file_path, _ = file_dialog.getOpenFileName(self, "Open .npy file", "", "NumPy Files (*.npy)")
         if file_path:
             self.volume = np.load(file_path)
+            self.normalize_volume()
             self.update_sliders()
+
+    def normalize_volume(self):
+        self.volume[self.volume < 0] = 0
+        self.volume = (self.volume - np.min(self.volume)) / np.ptp(self.volume) * 255
+        self.volume = self.volume.astype(np.uint8)
 
     def update_sliders(self):
         if self.volume is not None:
@@ -88,10 +94,9 @@ class SliceViewer(QMainWindow):
             self.display_image(slice_)
 
     def display_image(self, slice_):
-        slice_[slice_ < 0] = 0
-        slice_normalized = (255 *(slice_ - np.min(slice_)) / np.ptp(slice_)).astype(np.uint8)
-        height, width = slice_normalized.shape
-        q_image = QImage(slice_normalized.data, width, height, slice_normalized.strides[0], QImage.Format_Grayscale8)
+        slice_ = np.ascontiguousarray(slice_)
+        height, width = slice_.shape
+        q_image = QImage(slice_.data, width, height, slice_.strides[0], QImage.Format_Grayscale8)
 
         scaled_q_image = q_image.scaled(800, 800, Qt.KeepAspectRatio)
 
