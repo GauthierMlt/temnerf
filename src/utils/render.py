@@ -6,7 +6,7 @@ from data.datasets import get_params
 from utils.chart_writer import *
 from utils.sampling import get_samples_around_point
 from utils.debug import plot_rays
-import utils.chart_writer as writer
+from utils.utils import desktop_environment_available
 
 from tqdm import tqdm
 import os
@@ -111,7 +111,7 @@ def render_slice_from_points(model, points, device, resolution, samples_per_poin
 	return sigma # single channel
 
 @torch.no_grad()
-def build_volume(model, device, config, out_dir):
+def build_volume(model, device, config, out_dir, open_file_explorer=False):
 	resolution = config["output"]["slice_resolution"]
 	num_slices = resolution
 	volume = np.zeros((resolution, resolution, resolution), dtype=np.float32)
@@ -131,12 +131,13 @@ def build_volume(model, device, config, out_dir):
 	filepath = os.path.join(out_dir, filename)
 	
 	np.save(filepath, volume)
-	print(f"3D model saved to {os.path.join(out_dir, filepath)}")
 
-	try:
-		os.system(f'xdg-open {os.path.realpath(out_dir)}')
-	except:
-		pass
+	if open_file_explorer:
+		try:
+			if desktop_environment_available():
+				os.system(f'xdg-open {os.path.realpath(out_dir)}')
+		except:
+			pass
 
 def get_points_along_rays_mip(ray_origins, ray_directions, hn, hf, nb_bins, mip_level, debug=False):
     device = ray_origins.device
