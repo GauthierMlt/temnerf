@@ -11,7 +11,7 @@ from data.emdataset import EMDataset
 from data.datasets import get_params
 from utils.phantom import get_sigma_gt
 from utils.render import get_points_along_rays, get_pixel_values, get_ray_sigma, test_model, build_volume, get_density_mip_nerf
-from utils.chart_writer import linear_to_db, write_imgs, get_px_values
+from utils.chart_writer import compute_psnr, write_imgs, get_px_values
 from utils.utils import set_seed, get_model
 from utils.debug import plot_rays, plot_n_exit
 from utils.data import init_output_dir, write_slices
@@ -55,11 +55,8 @@ def run(_cfg: DictConfig):
 		near = -1 / (np.sqrt(2)) 
 		far  =  1 / (np.sqrt(2))
 
-		# near = -0.5
-		# far  = 0.5
-
-		near = -1
-		far  = 1
+		# near = -1
+		# far  = 1
 	else:
 		near = 0.5*radius - 0.5*object_size 
 		far  = 0.5*radius + 0.5*object_size 
@@ -94,39 +91,35 @@ def run(_cfg: DictConfig):
 			sampler = WeightedRandomSampler(pixel_weights, len(pixel_weights))
 			data_loader = DataLoader(training_dataset, batch_size=optim["batchsize"], sampler=sampler)
 		else:
-			data_loader = DataLoader(training_dataset, optim["batchsize"], shuffle=True, num_workers=0)
+			data_loader = DataLoader(training_dataset, optim["batchsize"], shuffle=True, num_workers=4)
 
 		optimizer = torch.optim.Adam(model.parameters(), lr=optim["learning_rate"])
 		scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=optim["milestones"], gamma=optim["gamma"])
 
-		print(f"Done.\nTraining model on {device}...")
-
 		loss_function=nn.MSELoss().to(device)
 
-		total_batches = optim["training_epochs"] * len(data_loader)
+		total_batches = optim["epochs"] * len(data_loader)
 		train_psnr = torch.zeros(total_batches, dtype=torch.float16, device=device)
 
 		early_stop = False
 	
-		with tqdm(range(optim["training_epochs"]), desc="Epochs") as t:
+		with tqdm(range(optim["epochs"]), desc="Iter") as t:
 			for ep in t:
 
 				ep_idx = ep * len(data_loader) 
-				for batch_num, batch in enumerate(tqdm(data_loader, leave=False, desc="Batch")):
+
+				bar = tqdm(data_loader, leave=False, desc="Epoch")
+				for batch_num, batch in enumerate(bar):
+
 					ray_origins 		   = batch[:, :3].to(device)
 					ray_directions 		   = batch[:, 3:6].to(device)
 					ground_truth_px_values = batch[:, 6].to(device)
-					
-					if "au" in data_name:
-						ground_truth_px_values = ground_truth_px_values /255.
 
 					regenerated_px_values = get_pixel_values(model, ray_origins, ray_directions, hn=near, hf=far, nb_bins=optim["samples_per_ray"], debug=False)
 					# regenerated_px_values = get_density_mip_nerf(model, ray_origins, ray_directions, hn=near, hf=far, nb_bins=optim["samples_per_ray"], mip_level=1, debug=False)
 
+					loss = loss_function(regenerated_px_values, ground_truth_px_values)
 
-					
-					loss = loss_function(regenerated_px_values*255., ground_truth_px_values)
-					
 					if loss.isnan():
 						print("\nLoss in NaN. Ending training")
 						early_stop = True
@@ -136,10 +129,14 @@ def run(_cfg: DictConfig):
 					loss.backward()
 					optimizer.step()
 
-					batch_idx = ep_idx + batch_num
-					train_psnr[batch_idx] = linear_to_db(loss).item()
 
-					if (batch_idx % 500) == 0:
+					batch_idx = ep_idx + batch_num
+					train_psnr[batch_idx] = compute_psnr(loss).item()
+
+					if (batch_idx % 5) == 0:
+						bar.set_description(f"Pred/GT min: {regenerated_px_values.min().item():.4f}/{ground_truth_px_values.min().item():.4f}"
+						  					f" | max: {regenerated_px_values.max().item():.4f}/{ground_truth_px_values.max().item():.4f} | PSNR:{train_psnr[batch_idx]:.2f} | lr: {optimizer.param_groups[0]['lr']:.2e}")
+					if (batch_idx % 10) == 0:
 						# print(f"\n{regenerated_px_values.min().item():2f}, {regenerated_px_values.max().item():2f}, {ground_truth_px_values.min().item():2f}, {ground_truth_px_values.max().item():2f}")
 						tf_writer.add_scalar("loss", loss, batch_idx) 
 						tf_writer.add_scalar("PSNR (db)", train_psnr[batch_idx], batch_idx) 
@@ -149,10 +146,11 @@ def run(_cfg: DictConfig):
 					break
 
 				scheduler.step()
+				# SAVE ONLY BEST MODEL !!!
 				torch.save(model.state_dict(), os.path.join(checkpoint_path, f'nerf_model_{ep}.pt'))
 				
 				write_slices(model, device, ep, batch_idx, _cfg["output"], slices_path, object_center) 
-				t.set_postfix(PSNR=f"{train_psnr[batch_idx]:.1f}dB", lr=f"{optimizer.param_groups[0]['lr']}")
+				# t.set_postfix(PSNR=f"{train_psnr[batch_idx]:.1f}dB")
 
 		trained_model = model
 		print(f"Training complete.")
@@ -189,7 +187,7 @@ def run(_cfg: DictConfig):
 		
 		for img_index in range(1):
 			test_loss, imgs = test_model(model=trained_model, dataset=testing_dataset, img_index=img_index, hn=near, hf=far, device=test_device, nb_bins=output["samples_per_ray"], H=h, W=w)
-			cpu_imgs = [img.data.reshape(h, w).clamp(0.0, 255.0).detach().cpu().numpy() for img in imgs]
+			cpu_imgs = [img.data.reshape(h, w).clamp(0.0, 1.0).detach().cpu().numpy() for img in imgs]
 			# cpu_imgs = [img.data.reshape(h, w).detach().cpu().numpy() for img in imgs]
 
 

@@ -2,9 +2,9 @@ network:
     # otype: CutlassMLP
     otype: FullyFusedMLP
     activation: ReLU
-    output_activation: LeakyReLU
+    output_activation: ReLU
     n_neurons: 128
-    n_hidden_layers: 8
+    n_hidden_layers: 4
 
 
 encoding:
@@ -12,32 +12,28 @@ encoding:
     type: Hash
     n_levels: 16
     n_features_per_level: 2
-    log2_hashmap_size: 17
-    base_resolution: 16
-    per_level_scale: 1.5
-    interpolation: Linear
+    log2_hashmap_size: 19
+    base_resolution: 8
+    per_level_scale: 2.0
     n_frequencies: 16
-    n_bins: 16
 
 
 optim:
-    training_epochs: 15
+    epochs: 1
     loss: L2
-    milestones: [5, 10]
+    milestones: [1, 2, 3]
     gamma: 0.5
-    batchsize: 1024
+    batchsize: 256
     samples_per_ray: 192
     learning_rate: 1e-3
     pixel_importance_sampling: false
     seed: 0
-    # checkpoint: /home/multari/temnerf/outputs/2024-07-03/proj20_batch1024_nerfoutX255_gtUINT8/checkpoints/nerf_model_19.pt
-    # checkpoint: /home/multari/temnerf/nerf_model_0.pt
 data:
     # dataset: walnut
     dataset: au_ag
     transforms_file: transforms
-    img_size: 256
-    n_images: 9999
+    img_size: 128
+    n_images: 40
     noise_level: 0
     # images_path: data/Au_Ag/Serie_3_ali.tif
     # angles_path: data/Au_Ag/TiltAngle_ali.txt
@@ -50,9 +46,9 @@ data:
 output:
     images: true
     slices: true
-    volume: true
+    volume: False
     samples_per_ray: 192
-    slice_resolution: 256
+    slice_resolution: 128
     rays_per_pixel: 16
     interval: 10
     intermediate_slices: false

@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import random
-
+import os
 def set_seed(seed):
 
     random.seed(seed)
@@ -26,6 +26,13 @@ def list_available_devices():
 
     return devices
 
+def desktop_environment_available():
+    if os.name == 'nt':
+        user32 = ctypes.windll.user32
+        return user32.GetSystemMetrics(0) != 0
+    else:
+        return os.getenv('DISPLAY') is not None
+    
 def get_model(encoding_config, network_config):
     
     try:

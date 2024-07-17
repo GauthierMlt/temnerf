@@ -22,18 +22,18 @@ def walnut(img, shape):
     # nerf is overfitting to noise, so clamp
     # any shot noise to zero by zeroing small values
     dark_floor = 0.05 # determine empirically
+
     img = exposure.rescale_intensity(img, in_range=(dark_floor, 1.8), out_range=(0.,1.))
 
     return img
 
 def jaw(img, shape):
     img = transform.resize(img, shape, anti_aliasing=False)
-    # img = exposure.rescale_intensity(img, in_range=(0, 2.**6), out_range=(0.,1.))
     img = np.float32(img)
     return img
 
 def au_ag(img: np.ndarray, shape: int | tuple, normalize=False):
-    # img = v2.ToImage()
+    
     img = v2.Resize(shape)(torch.from_numpy(img).reshape(1, 1, *img.shape)).squeeze()
 
     factor = 255. if normalize else 1.
@@ -41,10 +41,6 @@ def au_ag(img: np.ndarray, shape: int | tuple, normalize=False):
     img = (img.to(device='cuda').to(dtype=torch.float32)/factor).contiguous()
 
     if len(img.shape) == 2:
-        # img = np.expand_dims(img, axis=-1) # (H, W, C) 
         img = img.unsqueeze(0) # (C, H, W) 
-
-    # dark_floor = 0.05 # determine empirically
-    # img = exposure.rescale_intensity(img, in_range=(dark_floor, 1.), out_range=(0.,1.))
 
     return img
