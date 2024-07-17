@@ -12,6 +12,7 @@ class EMDataset(Dataset):
                  angles_path: str,
                  target_size: int,
                  n_projections=None,
+                 rescale_densities=True,
                  split: str="train"):
         
         super().__init__()
@@ -25,11 +26,11 @@ class EMDataset(Dataset):
         self.angles: np.ndarray     = None
         self.data: torch.Tensor     = None
         
-        self.read_data(images_path, angles_path, n_projections)
+        self.read_data(images_path, angles_path, n_projections, rescale_densities)
         self.init_data()
 
 
-    def read_data(self, images_path, angles_path, n_projections):
+    def read_data(self, images_path, angles_path, n_projections, rescale_densities):
         
         self.images = load_images(images_path, self.target_size)
         self.angles = load_angles(angles_path)
@@ -44,6 +45,9 @@ class EMDataset(Dataset):
             self.images = self.images[indices]
             self.angles = self.angles[indices]
 
+
+        if rescale_densities:
+            self.images /= 255.
 
     @torch.no_grad
     def init_data(self):
