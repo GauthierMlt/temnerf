@@ -8,17 +8,16 @@ from torchvision.transforms import ToPILImage
 from utils.render import render_slice
 from utils.chart_writer import write_img
 
-def load_images(images_path: str, target_size: int) -> np.ndarray:
+def load_images(images_path: str, target_size: int, rescale_values=False) -> np.ndarray:
 
     with Image.open(images_path) as im:
 
-        # assert im.mode == "L", \
-        #         f"Image mode '{im.mode}' different than the expected 'L' (8-bit grayscale)"
+        n_channels = get_n_channels(im.mode)
 
-        n_channels   =  get_n_channels(im.mode)
+        assert n_channels == 1, f"The images have {n_channels} channels, expected 1"
+
         tensor_shape = (im.n_frames, n_channels, target_size, target_size)
 
-        # images = np.zeros(tensor_shape, dtype=np.uint8) # (frame, C, H, W)
         images = torch.zeros(tensor_shape, dtype=torch.float32) # (frame, C, H, W)
 
         for i in range(im.n_frames):
@@ -26,7 +25,15 @@ def load_images(images_path: str, target_size: int) -> np.ndarray:
             np_array = np.array(im)  # (H,W) if 1 channel, else (H, W, C)       
             image = transforms.au_ag(np_array, target_size)
             images[i] = image
-            # images[i] = image.transpose(2, 0, 1) #(C, H, W)
+
+        
+        if rescale_values:
+            old_range = (images.min().item(), images.max().item())
+            images /= 255.
+            images = images.clamp(0., 1.)
+            print(f"Rescaled pixel values from {old_range} to "
+                  f"{(images.min().item(), images.max().item())}")
+
     return images
 
 
@@ -93,16 +100,18 @@ def save_tensor_as_image(tensor, iter, directory, prefix="train_proj", file_form
 
 
 def write_slices(model, device, epoch, sub_epoch, output, out_dir, object_center):
-		# MAX_BRIGHTNESS = 10.
-		resolution = (output["slice_resolution"], output["slice_resolution"])
+    # MAX_BRIGHTNESS = 10.
+    resolution = (output["slice_resolution"], output["slice_resolution"])
 
-		if output["slices"]:
-			for axis, name in enumerate(['x','y','z']):
-				img = render_slice(model=model, 
-					               dim=axis, 
-								   device=device, 
-								   resolution=resolution, 
-								   voxel_grid=False, 
-								   samples_per_point = output["rays_per_pixel"])
-				img = img.data.clamp(0, 1.).cpu().numpy().reshape(resolution[0], resolution[1])
-				write_img(img, f'{out_dir}/slice_{name}_{epoch:04}_{sub_epoch:04}.png', verbose=False)
+    if output["slices"]:
+        for axis, name in enumerate(['x','y','z']):
+            img = render_slice(model=model, 
+                                dim=axis, 
+                                device=device, 
+                                resolution=resolution, 
+                                voxel_grid=False, 
+                                samples_per_point = output["rays_per_pixel"])
+            img = (img - img.min()) / (img.max() - img.min())
+            img = img.data.clamp(0, 1.).cpu().numpy().reshape(resolution[0], resolution[1])
+            
+            write_img(img, f'{out_dir}/slice_{name}_{epoch:04}_{sub_epoch:04}.png', verbose=False)

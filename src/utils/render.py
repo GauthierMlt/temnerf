@@ -98,8 +98,6 @@ def render_slice_from_points(model, points, device, resolution, samples_per_poin
 	nb_points = points.shape[0]
 	delta = 1. / resolution[0]
 
-	# In general we have too many points to put directly on gpu (res**2 * samples_per_point), so put them on cpu then calculate on gpu in batches
-	# points = points.to('cpu') 
 	samples = get_samples_around_point(points, delta, samples_per_point) # [nb_samples, nb_points, 3]
 	sigma = torch.empty((0,1), device=device)
 	samples = samples.reshape(nb_points*samples_per_point,3)
@@ -108,13 +106,13 @@ def render_slice_from_points(model, points, device, resolution, samples_per_poin
 
 	sigma = sigma.reshape(samples_per_point, -1) # [nb_points, samples_per_point]
 	sigma = torch.mean(sigma, dim=0)
-	return sigma # single channel
+	return sigma 
 
 @torch.no_grad()
-def build_volume(model, device, config, out_dir, open_file_explorer=False):
+def build_volume(model, device, config, out_dir, factor=1.0, open_file_explorer=False):
 	resolution = config["output"]["slice_resolution"]
 	num_slices = resolution
-	volume = np.zeros((resolution, resolution, resolution), dtype=np.float32)
+	volume = torch.zeros((resolution, resolution, resolution), dtype=torch.float32, requires_grad=False)
 	slices = sample_volume(device, (resolution, resolution), num_slices)
 
 	for i in tqdm(range(num_slices), desc="Building volume"):
@@ -123,15 +121,16 @@ def build_volume(model, device, config, out_dir, open_file_explorer=False):
 		# plot_rays(torch.zeros(1), torch.zeros(1), additional_points=slices.reshape(-1, 3)[::10].cpu(), show_origins=False, show_directions=False)
 
 		img = render_slice_from_points(model=model, points=points, device=device, resolution=(resolution, resolution), samples_per_point=config["output"]["rays_per_pixel"])
-		
-		img = img.clamp(0., 255.).reshape(resolution, resolution).cpu().numpy()
-		volume[:, i, :] = img
 
+		volume[:, i, :] = img.reshape(resolution, resolution)
+
+	volume /= factor
+	
 	filename = f'{config["network"]["n_hidden_layers"]}_{config["network"]["n_neurons"]}.npy'
 	filepath = os.path.join(out_dir, filename)
 	
-	np.save(filepath, volume)
-
+	np.save(filepath, volume.cpu().numpy())
+	print(volume.max())
 	if open_file_explorer:
 		try:
 			if desktop_environment_available():
@@ -255,7 +254,6 @@ def render_slice(model, dim, device, resolution, voxel_grid, samples_per_point):
 	# 	# TODO: don't need to keep all samples, can do the
 	# 	# averaging here
 	# 	del batch
-
 	sigma = sigma.reshape(samples_per_point, -1) # [nb_points, samples_per_point]
 	sigma = torch.mean(sigma, dim=0)
 	return sigma # single channel
@@ -315,11 +313,11 @@ def render_image(model, frame, **params):
 
 
 @torch.no_grad()
-def test_model(model, dataset, img_index, **render_params):
+def test_model(model, dataset, img_index, factor, **render_params):
 	frame = dataset[img_index]
 
 	img_tensor = render_image(model, frame, **render_params)
-
+	img_tensor *= factor
 	# img_tensor = (img_tensor - torch.min(img_tensor)) / (torch.max(img_tensor) - torch.min(img_tensor))
 		
 	# plt.imshow(img_tensor.reshape(render_params["H"],render_params["W"]).cpu(), cmap="gray")

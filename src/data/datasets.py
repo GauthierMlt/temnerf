@@ -14,7 +14,7 @@ def get_params(d):
         radius = 163
         object_size = 48 # safer to overestimate
         return 3, radius, object_size, aspect_ratio
-    elif d == "au_ag":
+    elif d == "tem":
         radius = 2
         object_size = 0.1
         

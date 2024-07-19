@@ -42,6 +42,7 @@ def run(_cfg: DictConfig):
 	model.to(device)
 	data_config = _cfg["data"]
 
+	optim = OmegaConf.to_container(_cfg.optim)
 	data_name = data_config["dataset"]
 	h = data_config["img_size"]
 
@@ -49,9 +50,9 @@ def run(_cfg: DictConfig):
 
 	w = int(h*aspect_ratio)
 	
-	object_center = 0.5 if "au" in data_name else 0.5
+	object_center = 0.5 
 
-	if "au" in data_name:
+	if "tem" in data_name:
 		near = -1 / (np.sqrt(2)) 
 		far  =  1 / (np.sqrt(2))
 
@@ -64,12 +65,13 @@ def run(_cfg: DictConfig):
 
 	checkpoint_path, slices_path, volume_path = init_output_dir(out_dir)
 
+	factor = optim["factor"]
+
 	if not _cfg.optim.get("checkpoint", False):
-		optim = OmegaConf.to_container(_cfg.optim)
 
 		print(f"Output will be written to {out_dir}. \nLoading Data...")
 
-		if "au" in data_name:
+		if "tem" in data_name:
 			training_dataset = EMDataset(device=device,
 								         images_path=data_config["images_path"],
 										 angles_path=data_config["angles_path"],
@@ -91,9 +93,9 @@ def run(_cfg: DictConfig):
 			sampler = WeightedRandomSampler(pixel_weights, len(pixel_weights))
 			data_loader = DataLoader(training_dataset, batch_size=optim["batchsize"], sampler=sampler)
 		else:
-			data_loader = DataLoader(training_dataset, optim["batchsize"], shuffle=True, num_workers=4)
+			data_loader = DataLoader(training_dataset, optim["batchsize"], shuffle=True, num_workers=0)
 
-		optimizer = torch.optim.Adam(model.parameters(), lr=optim["learning_rate"])
+		optimizer = torch.optim.Adam(model.parameters(), lr=optim["learning_rate"], betas=(0.9, 0.999))
 		scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=optim["milestones"], gamma=optim["gamma"])
 
 		loss_function=nn.MSELoss().to(device)
@@ -102,7 +104,6 @@ def run(_cfg: DictConfig):
 		train_psnr = torch.zeros(total_batches, dtype=torch.float16, device=device)
 
 		early_stop = False
-	
 		with tqdm(range(optim["epochs"]), desc="Iter") as t:
 			for ep in t:
 
@@ -118,7 +119,7 @@ def run(_cfg: DictConfig):
 					regenerated_px_values = get_pixel_values(model, ray_origins, ray_directions, hn=near, hf=far, nb_bins=optim["samples_per_ray"], debug=False)
 					# regenerated_px_values = get_density_mip_nerf(model, ray_origins, ray_directions, hn=near, hf=far, nb_bins=optim["samples_per_ray"], mip_level=1, debug=False)
 
-					loss = loss_function(regenerated_px_values, ground_truth_px_values)
+					loss = loss_function(regenerated_px_values*factor, ground_truth_px_values)
 
 					if loss.isnan():
 						print("\nLoss in NaN. Ending training")
@@ -129,7 +130,6 @@ def run(_cfg: DictConfig):
 					loss.backward()
 					optimizer.step()
 
-
 					batch_idx = ep_idx + batch_num
 					train_psnr[batch_idx] = compute_psnr(loss).item()
 
@@ -138,6 +138,7 @@ def run(_cfg: DictConfig):
 						  					f" | max: {regenerated_px_values.max().item():.4f}/{ground_truth_px_values.max().item():.4f} | PSNR:{train_psnr[batch_idx]:.2f} | lr: {optimizer.param_groups[0]['lr']:.2e}")
 					if (batch_idx % 10) == 0:
 						# print(f"\n{regenerated_px_values.min().item():2f}, {regenerated_px_values.max().item():2f}, {ground_truth_px_values.min().item():2f}, {ground_truth_px_values.max().item():2f}")
+						
 						tf_writer.add_scalar("loss", loss, batch_idx) 
 						tf_writer.add_scalar("PSNR (db)", train_psnr[batch_idx], batch_idx) 
 
@@ -174,7 +175,7 @@ def run(_cfg: DictConfig):
 	
 	if output["images"]:
 
-		if "au" in data_name:
+		if "tem" in data_name:
 			testing_dataset = EMDataset(device=device,
 								         images_path=data_config["images_path"],
 										 angles_path=data_config["angles_path"],
@@ -186,7 +187,10 @@ def run(_cfg: DictConfig):
 		
 		
 		for img_index in range(1):
-			test_loss, imgs = test_model(model=trained_model, dataset=testing_dataset, img_index=img_index, hn=near, hf=far, device=test_device, nb_bins=output["samples_per_ray"], H=h, W=w)
+
+
+			with torch.no_grad():
+				test_loss, imgs = test_model(model=trained_model, dataset=testing_dataset, img_index=img_index, hn=near, hf=far, device=test_device, nb_bins=output["samples_per_ray"], H=h, W=w, factor=factor)
 			cpu_imgs = [img.data.reshape(h, w).clamp(0.0, 1.0).detach().cpu().numpy() for img in imgs]
 			# cpu_imgs = [img.data.reshape(h, w).detach().cpu().numpy() for img in imgs]
 
@@ -210,10 +214,10 @@ def run(_cfg: DictConfig):
 				sigma_gt = np.zeros(0)
 
 			sigma = sigma.data.cpu().numpy().reshape(NB_RAYS,-1)
-			text = f"PSNR: {test_loss}"
+			text = f"PSNR: {test_loss:.2f}"
 
 			if _cfg.output.get("volume", False):
-				build_volume(model, device, _cfg, volume_path)
+				build_volume(model, device, _cfg, volume_path, factor)
 
 			write_imgs((cpu_imgs, train_psnr.tolist(), sigma, sigma_gt, px_vals), f'{out_dir}/loss_{img_index}.png', text, show_training_img=False)
 

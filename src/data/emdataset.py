@@ -16,7 +16,6 @@ class EMDataset(Dataset):
                  split: str="train"):
         
         super().__init__()
-
         self.n_projections: int     = n_projections
         self.target_size: int       = target_size
         self.device: torch.device   = device
@@ -26,28 +25,25 @@ class EMDataset(Dataset):
         self.angles: np.ndarray     = None
         self.data: torch.Tensor     = None
         
-        self.read_data(images_path, angles_path, n_projections, rescale_densities)
+        self.read_data(images_path, angles_path, rescale_densities)
         self.init_data()
 
 
-    def read_data(self, images_path, angles_path, n_projections, rescale_densities):
+    def read_data(self, images_path, angles_path, rescale_densities):
         
-        self.images = load_images(images_path, self.target_size)
+        self.images = load_images(images_path, self.target_size, rescale_densities)
         self.angles = load_angles(angles_path)
 
-        if n_projections:
-
-            if n_projections >= len(self.angles):
+        if self.n_projections != None:
+            
+            if self.n_projections >= len(self.angles):
                 return
 
-            indices = np.linspace(0, len(self.angles)-1, n_projections, endpoint=True, dtype=int)
+            indices = np.linspace(0, len(self.angles)-1, self.n_projections, endpoint=True, dtype=int)
             
             self.images = self.images[indices]
             self.angles = self.angles[indices]
 
-
-        if rescale_densities:
-            self.images /= 255.
 
     @torch.no_grad
     def init_data(self):

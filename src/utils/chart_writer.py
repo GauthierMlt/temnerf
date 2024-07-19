@@ -80,14 +80,6 @@ def write_img(img, path, verbose=True):
 	if verbose:
 		print(f"Image {img.shape[0]} x {img.shape[1]} written to {path}")
 
-# def linear_to_db(x):
-# 	return -10.*np.log(x)/np.log(10.)
-
-@torch.no_grad
+@torch.no_grad()
 def compute_psnr(mse, max_val=1):
 	return 10 * torch.log10(max_val ** 2 / mse)
-
-
-if __name__ == '__main__':
-	print(moving_average(np.arange(20),1))
-	print(moving_average(np.arange(20),10))

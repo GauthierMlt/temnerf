@@ -2,9 +2,9 @@ network:
     # otype: CutlassMLP
     otype: FullyFusedMLP
     activation: ReLU
-    output_activation: ReLU
+    output_activation: None
     n_neurons: 128
-    n_hidden_layers: 4
+    n_hidden_layers: 6
 
 
 encoding:
@@ -13,7 +13,7 @@ encoding:
     n_levels: 16
     n_features_per_level: 2
     log2_hashmap_size: 19
-    base_resolution: 8
+    base_resolution: 16
     per_level_scale: 2.0
     n_frequencies: 16
 
@@ -21,32 +21,34 @@ encoding:
 optim:
     epochs: 1
     loss: L2
-    milestones: [1, 2, 3]
+    milestones: [1, 2, 3, 4]
     gamma: 0.5
-    batchsize: 256
+    batchsize: 1024
     samples_per_ray: 192
-    learning_rate: 1e-3
+    learning_rate: 1e-2
     pixel_importance_sampling: false
     seed: 0
+    factor: 20.0
 data:
     # dataset: walnut
-    dataset: au_ag
+    dataset: tem
     transforms_file: transforms
     img_size: 128
-    n_images: 40
+    n_images: 50
     noise_level: 0
-    # images_path: data/Au_Ag/Serie_3_ali.tif
-    # angles_path: data/Au_Ag/TiltAngle_ali.txt
+    images_path: data/Au_Ag/Serie_3_ali.tif
+    angles_path: data/Au_Ag/TiltAngle_ali.txt
     # images_path: data/shepp_projections/shepp_projection_512_120.tiff
     # images_path: data/shepp_projections/shepp_projections_512_120_8bit.tiff
     # angles_path: data/shepp_projections/angles_120.txt
-    images_path: data/benchmark/au_ag_sirt_180_8bit.tiff
-    angles_path: data/benchmark/au_ag_sirt_180.txt
+    # images_path: data/benchmark/au_ag_sirt_180_8bit.tiff
+    # images_path: data/benchmark/au_ag_sirt_180.tiff
+    # angles_path: data/benchmark/au_ag_sirt_180.txt
 
 output:
     images: true
     slices: true
-    volume: False
+    volume: true
     samples_per_ray: 192
     slice_resolution: 128
     rays_per_pixel: 16
