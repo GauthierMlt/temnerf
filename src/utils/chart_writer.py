@@ -42,9 +42,10 @@ def write_imgs(data, path, title=None, show_training_img=False):
 	for i, sub_tit in enumerate(titles):
 		ax = fig.add_subplot(gs[0, i])
 		if i < 2:
-			ax.imshow(imgs[i].clip(0,1),cmap='Greys_r',vmin=0,vmax=1)
+			im = ax.imshow(imgs[i],cmap='Greys_r')
 		else:
-			ax.imshow(imgs[i].clip(0,1),cmap='viridis')
+			im = ax.imshow(imgs[i],cmap='viridis')
+		plt.colorbar(im, ax=ax) 
 		ax.set_title(sub_tit)
 
 	# curve
@@ -77,6 +78,7 @@ def write_img(img, path, verbose=True):
 	ax.invert_xaxis()
 	plt.axis('off')
 	plt.savefig(path, bbox_inches='tight', pad_inches=0)
+	plt.close()
 	if verbose:
 		print(f"Image {img.shape[0]} x {img.shape[1]} written to {path}")
 

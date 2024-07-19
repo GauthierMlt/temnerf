@@ -111,7 +111,7 @@ def write_slices(model, device, epoch, sub_epoch, output, out_dir, object_center
                                 resolution=resolution, 
                                 voxel_grid=False, 
                                 samples_per_point = output["rays_per_pixel"])
-            img = (img - img.min()) / (img.max() - img.min())
+            # img = (img - img.min()) / (img.max() - img.min())
             img = img.data.clamp(0, 1.).cpu().numpy().reshape(resolution[0], resolution[1])
             
             write_img(img, f'{out_dir}/slice_{name}_{epoch:04}_{sub_epoch:04}.png', verbose=False)

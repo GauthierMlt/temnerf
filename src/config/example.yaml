@@ -25,7 +25,7 @@ optim:
     gamma: 0.5
     batchsize: 1024
     samples_per_ray: 192
-    learning_rate: 1e-2
+    learning_rate: 1e-3
     pixel_importance_sampling: false
     seed: 0
     factor: 20.0
@@ -34,7 +34,7 @@ data:
     dataset: tem
     transforms_file: transforms
     img_size: 128
-    n_images: 50
+    n_images: 20
     noise_level: 0
     images_path: data/Au_Ag/Serie_3_ali.tif
     angles_path: data/Au_Ag/TiltAngle_ali.txt
@@ -48,7 +48,7 @@ data:
 output:
     images: true
     slices: true
-    volume: true
+    volume: false
     samples_per_ray: 192
     slice_resolution: 128
     rays_per_pixel: 16

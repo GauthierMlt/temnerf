@@ -22,7 +22,6 @@ from torch.utils.tensorboard import SummaryWriter
 
 @hydra.main(config_path="config", config_name="example", version_base="1.2")
 def run(_cfg: DictConfig):
-
 	out_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
 
 	tf_writer = SummaryWriter(log_dir=out_dir)
@@ -53,11 +52,8 @@ def run(_cfg: DictConfig):
 	object_center = 0.5 
 
 	if "tem" in data_name:
-		near = -1 / (np.sqrt(2)) 
-		far  =  1 / (np.sqrt(2))
-
-		# near = -1
-		# far  = 1
+		near = -1
+		far  = 1
 	else:
 		near = 0.5*radius - 0.5*object_size 
 		far  = 0.5*radius + 0.5*object_size 
@@ -119,6 +115,7 @@ def run(_cfg: DictConfig):
 					regenerated_px_values = get_pixel_values(model, ray_origins, ray_directions, hn=near, hf=far, nb_bins=optim["samples_per_ray"], debug=False)
 					# regenerated_px_values = get_density_mip_nerf(model, ray_origins, ray_directions, hn=near, hf=far, nb_bins=optim["samples_per_ray"], mip_level=1, debug=False)
 
+
 					loss = loss_function(regenerated_px_values*factor, ground_truth_px_values)
 
 					if loss.isnan():
@@ -142,6 +139,9 @@ def run(_cfg: DictConfig):
 						tf_writer.add_scalar("loss", loss, batch_idx) 
 						tf_writer.add_scalar("PSNR (db)", train_psnr[batch_idx], batch_idx) 
 
+
+					if batch_idx > 100:
+						factor =1.
 					# torch.cuda.empty_cache()
 				if early_stop:
 					break
@@ -191,7 +191,7 @@ def run(_cfg: DictConfig):
 
 			with torch.no_grad():
 				test_loss, imgs = test_model(model=trained_model, dataset=testing_dataset, img_index=img_index, hn=near, hf=far, device=test_device, nb_bins=output["samples_per_ray"], H=h, W=w, factor=factor)
-			cpu_imgs = [img.data.reshape(h, w).clamp(0.0, 1.0).detach().cpu().numpy() for img in imgs]
+			cpu_imgs = [img.data.reshape(h, w).detach().cpu().numpy() for img in imgs]
 			# cpu_imgs = [img.data.reshape(h, w).detach().cpu().numpy() for img in imgs]
 
 
@@ -220,7 +220,6 @@ def run(_cfg: DictConfig):
 				build_volume(model, device, _cfg, volume_path, factor)
 
 			write_imgs((cpu_imgs, train_psnr.tolist(), sigma, sigma_gt, px_vals), f'{out_dir}/loss_{img_index}.png', text, show_training_img=False)
-
 	# if output["slices"]:
 	# 	# stich together slices into a video
 	# 	sys_command = f"ffmpeg -hide_banner -loglevel error -r 5 -i tmp/{run_name}_x_%04d.png -vf \"hflip\" out/{run_name}_slices_x.mp4"
