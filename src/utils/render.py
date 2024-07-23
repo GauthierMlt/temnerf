@@ -130,13 +130,20 @@ def build_volume(model, device, config, out_dir, factor=1.0, open_file_explorer=
 	filepath = os.path.join(out_dir, filename)
 	
 	np.save(filepath, volume.cpu().numpy())
-	print(volume.max())
+
+	try:
+		log.info(f"Volume min {volume.min()} | max: {volume.max()} | avg {volume.mean()} ")
+	except:
+		print(f"Volume min {volume.min()} | max: {volume.max()} | avg {volume.mean()} ")
+
 	if open_file_explorer:
 		try:
 			if desktop_environment_available():
 				os.system(f'xdg-open {os.path.realpath(out_dir)}')
 		except:
 			pass
+
+	return volume
 
 def get_points_along_rays_mip(ray_origins, ray_directions, hn, hf, nb_bins, mip_level, debug=False):
     device = ray_origins.device

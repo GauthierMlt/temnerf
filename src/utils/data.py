@@ -99,7 +99,7 @@ def save_tensor_as_image(tensor, iter, directory, prefix="train_proj", file_form
             img.save(os.path.join(directory, f"{iter:4g}_{prefix}_batch{i}_img{j}.{file_format}"))
 
 
-def write_slices(model, device, epoch, sub_epoch, output, out_dir, object_center):
+def write_slices(model, device, epoch, sub_epoch, output, out_dir, volume_gt: np.ndarray):
     # MAX_BRIGHTNESS = 10.
     resolution = (output["slice_resolution"], output["slice_resolution"])
 
@@ -113,5 +113,7 @@ def write_slices(model, device, epoch, sub_epoch, output, out_dir, object_center
                                 samples_per_point = output["rays_per_pixel"])
             # img = (img - img.min()) / (img.max() - img.min())
             img = img.data.clamp(0, 1.).cpu().numpy().reshape(resolution[0], resolution[1])
+            gt_img = np.moveaxis(volume_gt, axis, 0)[128, :, :]
             
             write_img(img, f'{out_dir}/slice_{name}_{epoch:04}_{sub_epoch:04}.png', verbose=False)
+            write_img(gt_img, f'{out_dir}/slice_{name}_{epoch:04}_{sub_epoch:04}_gt.png', verbose=False)
