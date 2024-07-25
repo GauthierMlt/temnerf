@@ -2,6 +2,10 @@ import numpy as np
 import torch
 import random
 import os
+import logging
+
+log = logging.getLogger(__name__)
+
 def set_seed(seed):
 
     random.seed(seed)
@@ -33,15 +37,14 @@ def desktop_environment_available():
     else:
         return os.getenv('DISPLAY') is not None
     
-def get_model(encoding_config, network_config):
+def get_model(encoding_config, network_config,seed=1337):
     
     try:
         import tinycudann as tcnn
         TINY_CUDA = True
     except ImportError:
-        print("tiny-cuda-nn not found.  Performance will be significantly degraded.")
-        print("You can install tiny-cuda-nn from https://github.com/NVlabs/tiny-cuda-nn")
-        print("============================================================")
+        log.warning("tiny-cuda-nn not found.  Performance will be significantly degraded.")
+        log.warning("You can install tiny-cuda-nn from https://github.com/NVlabs/tiny-cuda-nn")
         TINY_CUDA = False
 
     from models.nerf import Nerf
@@ -50,6 +53,7 @@ def get_model(encoding_config, network_config):
         return tcnn.NetworkWithInputEncoding(n_input_dims=3, 
                                               n_output_dims=1, 
                                               encoding_config=encoding_config, 
-                                              network_config=network_config)
+                                              network_config=network_config,
+                                              seed=seed)
     else: 
         return Nerf(encoding_config, network_config)

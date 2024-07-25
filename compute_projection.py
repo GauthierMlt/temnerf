@@ -8,6 +8,7 @@ from utils.render import render_image
 import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime
+import imageio
 
 def parse_args():
 
@@ -56,12 +57,14 @@ if __name__ == "__main__":
     model.load_state_dict(torch.load(args.checkpoint))
     model.eval()
     
-    near = -1 / (np.sqrt(2))
-    far  =  1 / (np.sqrt(2))
+    dist = 0.25/np.sqrt(2)
+    print(dist)
+    near = -dist
+    far  =  dist
 
     projections = torch.zeros((len(args.angles), size, size), dtype=torch.float)
     
-    for angle in args.angles:
+    for idx, angle in enumerate(args.angles):
 
         ray_origins, ray_directions = compute_rays([np.deg2rad(angle)], size)
         data = torch.cat([ray_origins, ray_directions], dim=1)
@@ -83,10 +86,12 @@ if __name__ == "__main__":
 
         if args.uint8:
             img = (img*255.).to(torch.uint8)
-        
-        save_path = os.path.join(output_dir, f"{angle:3g}_deg.tiff")
+
+        projections[idx] = img    
+        save_path = os.path.join(output_dir, f"{angle:3g}_deg.png")
         plt.imsave(save_path, img, cmap="Greys_r")
-        plt.show()
+        # plt.show()
         print("Done")
 
-        os.system(f'xdg-open {os.path.realpath(output_dir)}')
+    # imageio.mimwrite(f'{output_dir}/projs.tiff', (projections*255.).cpu().numpy())
+        # os.system(f'xdg-open {os.path.realpath(output_dir)}')

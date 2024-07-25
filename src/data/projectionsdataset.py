@@ -1,4 +1,4 @@
-from torch.utils.data import Dataset, WeightedRandomSampler
+from torch.utils.data import Dataset
 from torchvision import transforms as T
 import numpy as np
 import torch
@@ -6,7 +6,6 @@ import json
 import os
 
 from utils.ray import get_ray_directions, get_rays
-from utils.chart_writer import write_img
 from data.nerfimage import NerfImage
 import data.transforms as transforms
 from tqdm import tqdm

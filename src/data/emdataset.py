@@ -3,6 +3,9 @@ from torch.utils.data import Dataset
 from utils.ray import compute_rays
 import numpy as np
 import torch
+import logging
+
+log = logging.getLogger(__name__)
 
 class EMDataset(Dataset):
 
@@ -44,11 +47,16 @@ class EMDataset(Dataset):
             self.images = self.images[indices]
             self.angles = self.angles[indices]
 
+        log.info(f"Angles: {np.degrees(self.angles)}")
+
 
     @torch.no_grad
     def init_data(self):
 
         ray_origins, ray_directions = compute_rays(self.angles, self.target_size)
+
+        # ray_origins = ray_origins[:, [2, 1, 0]]
+        # ray_directions = ray_directions[:, [2, 1, 0]]
 
         self.data = torch.cat([
             ray_origins,

@@ -10,15 +10,16 @@ from data.projectionsdataset import ProjectionsDataset
 from data.emdataset import EMDataset
 from data.datasets import get_params
 from utils.phantom import get_sigma_gt
-from utils.render import get_points_along_rays, get_pixel_values, get_ray_sigma, test_model, build_volume, get_density_mip_nerf
-from utils.chart_writer import compute_psnr, write_imgs, get_px_values
+from utils.render import get_points_along_rays, get_pixel_values, get_ray_sigma, test_model, build_volume, get_density_mip_nerf, render_and_save_slices
+from utils.chart_writer import save_training_report, get_px_values
 from utils.utils import set_seed, get_model
 from utils.debug import plot_rays, plot_n_exit
-from utils.data import init_output_dir, write_slices
+from utils.data import init_output_dir, normalize, compute_psnr 
 
 import hydra
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.tensorboard import SummaryWriter
+import matplotlib.pyplot as plt
 
 log = logging.getLogger(__name__)
 
@@ -33,12 +34,13 @@ def run(_cfg: DictConfig):
 	device = _cfg["hardware"]["train"]
 
 	if torch.cuda.is_available():
-		print(f"Found {torch.cuda.get_device_name()}")
+		log.info(f"Found {torch.cuda.get_device_name()}")
 	else:
-		print(f"No GPU found")
+		log.warning(f"No GPU found")
 		
 	model = get_model(OmegaConf.to_container(_cfg.encoding), 
-				      OmegaConf.to_container(_cfg.network))
+				      OmegaConf.to_container(_cfg.network),
+					  _cfg.optim.seed)
 	
 	model.to(device)
 	data_config = _cfg["data"]
@@ -50,12 +52,13 @@ def run(_cfg: DictConfig):
 	c, radius, object_size, aspect_ratio = get_params(data_name)
 
 	w = int(h*aspect_ratio)
-	
-	object_center = 0.5 
 
 	if "tem" in data_name:
-		near = -1
-		far  = 1
+		cfg_dist = _cfg.data.get("dist", "1/np.sqrt(2)")
+		dist = eval(cfg_dist) if isinstance(cfg_dist, str) else cfg_dist
+		print("Dist=", dist)
+		near = - dist
+		far  = dist
 	else:
 		near = 0.5*radius - 0.5*object_size 
 		far  = 0.5*radius + 0.5*object_size 
@@ -63,18 +66,23 @@ def run(_cfg: DictConfig):
 
 	checkpoint_path, slices_path, volume_path = init_output_dir(out_dir)
 
+	volume_gt = None
+	
 	if gt_path := _cfg.data.get("ground_truth_path", None):
 		try:
 			volume_gt = np.load(gt_path)
 		except:
 			log.warning(f"Could not find ground truth volume at {_cfg.output.get('ground_truth_path')}")
-			volume_gt = None
 
 	factor = optim["factor"]
 
-	if not _cfg.optim.get("checkpoint", False):
+	if _cfg.optim.get("checkpoint", False):
+		model.load_state_dict(torch.load(_cfg.optim.checkpoint))
+		log.info(f"Loaded model from checkpoint: {_cfg.optim.checkpoint}")
 
-		print(f"Output will be written to {out_dir}. \nLoading Data...")
+	if not _cfg.optim.get("checkpoint", False) or  _cfg.optim.get("resume_training", False):
+
+		log.info(f"Output will be written to {out_dir}.")
 
 		if "tem" in data_name:
 			training_dataset = EMDataset(device=device,
@@ -98,7 +106,8 @@ def run(_cfg: DictConfig):
 			sampler = WeightedRandomSampler(pixel_weights, len(pixel_weights))
 			data_loader = DataLoader(training_dataset, batch_size=optim["batchsize"], sampler=sampler)
 		else:
-			data_loader = DataLoader(training_dataset, optim["batchsize"], shuffle=True, num_workers=0)
+			# data_loader = DataLoader(training_dataset, optim["batchsize"], shuffle=True, num_workers=0)
+			data_loader = DataLoader(training_dataset, h*w, shuffle=False, num_workers=0)
 
 		optimizer = torch.optim.Adam(model.parameters(), lr=optim["learning_rate"], betas=(0.9, 0.999))
 		scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=optim["milestones"], gamma=optim["gamma"])
@@ -109,45 +118,48 @@ def run(_cfg: DictConfig):
 		train_loss = torch.zeros(total_batches, dtype=torch.float16, device=device, requires_grad=False)
 
 		early_stop = False
+		
 		with tqdm(range(optim["epochs"]), desc="Iter") as t:
 			for ep in t:
 
 				ep_idx = ep * len(data_loader) 
 
-				bar = tqdm(data_loader, leave=False, desc="Epoch")
-				for batch_num, batch in enumerate(bar):
+				pbar = tqdm(data_loader, leave=False, desc="Epoch")
+
+				batch: torch.Tensor
+
+				for batch_num, batch in enumerate(pbar):
 
 					ray_origins 		   = batch[:, :3].to(device)
 					ray_directions 		   = batch[:, 3:6].to(device)
 					ground_truth_px_values = batch[:, 6].to(device)
 
+					optimizer.zero_grad()
 					regenerated_px_values = get_pixel_values(model, ray_origins, ray_directions, hn=near, hf=far, nb_bins=optim["samples_per_ray"], debug=False)
 					# regenerated_px_values = get_density_mip_nerf(model, ray_origins, ray_directions, hn=near, hf=far, nb_bins=optim["samples_per_ray"], mip_level=1, debug=False)
 
-
+					plt.imsave(f"{slices_path}/{ep}_{batch_num}.png", regenerated_px_values.reshape(h,w).detach().cpu().numpy())
+					plt.imsave(f"{slices_path}/{ep}_{batch_num}_gt.png", ground_truth_px_values.reshape(h,w).detach().cpu().numpy())
 					loss = loss_function(regenerated_px_values*factor, ground_truth_px_values)
 
 					if loss.isnan():
-						print("\nLoss in NaN. Ending training")
+						log.warning("\nLoss in NaN. Ending training")
 						early_stop = True
 						break
 
-					optimizer.zero_grad()
 					loss.backward()
 					optimizer.step()
 
 					batch_idx = ep_idx + batch_num
-					train_loss[batch_idx] = loss.detach()
+					train_loss[batch_idx] = compute_psnr(loss)
 
-					
-					if (batch_idx % (len(bar)//100)) == 0:
-						bar.set_description(f"Pred/GT min: {regenerated_px_values.min().item():.4f}/{ground_truth_px_values.min().item():.4f}"
-						  					f" | max: {regenerated_px_values.max().item():.4f}/{ground_truth_px_values.max().item():.4f}"
-											f" | mean {regenerated_px_values.mean().item():.4f}/{ground_truth_px_values.mean().item():.4f}"
-											f" | PSNR:{compute_psnr(loss).item():.2f} | lr: {optimizer.param_groups[0]['lr']:.2e}")
-					if (batch_idx % 10) == 0:
-						# print(f"\n{regenerated_px_values.min().item():2f}, {regenerated_px_values.max().item():2f}, {ground_truth_px_values.min().item():2f}, {ground_truth_px_values.max().item():2f}")
+					if (batch_num % max(1, len(pbar) // 100)) == 0:
+						pbar.set_description(f"Pred/GT min: {regenerated_px_values.min().item():.4f}/{ground_truth_px_values.min().item():.4f}"
+						  					 f" | max: {regenerated_px_values.max().item():.4f}/{ground_truth_px_values.max().item():.4f}"
+											 f" | mean: {regenerated_px_values.mean().item():.4f}/{ground_truth_px_values.mean().item():.4f}"
+											 f" | PSNR:{compute_psnr(loss).item():.2f} | lr: {optimizer.param_groups[0]['lr']:.2e}")
 						
+					if (batch_idx % 10) == 0:
 						tf_writer.add_scalar("loss", loss, batch_idx) 
 
 					# torch.cuda.empty_cache()
@@ -158,15 +170,14 @@ def run(_cfg: DictConfig):
 				# SAVE ONLY BEST MODEL !!!
 				torch.save(model.state_dict(), os.path.join(checkpoint_path, f'nerf_model_{ep}.pt'))
 				
-				write_slices(model, device, ep, batch_idx, _cfg["output"], slices_path, volume_gt) 
-				# t.set_postfix(PSNR=f"{train_psnr[batch_idx]:.1f}dB")
+				render_and_save_slices(model, device, ep, batch_idx, _cfg["output"], slices_path, volume_gt) 
 
-		train_psnr = compute_psnr(train_loss)
+		train_psnr = train_loss
 		trained_model = model
-		print(f"Training complete.")
+		log.info(f"Training complete.")
 	else:
 		checkpoint = _cfg.optim.checkpoint
-		print(f"Loading model from {checkpoint}")
+		log.info(f"Loading model from {checkpoint}")
 		train_psnr = torch.zeros(1)
 		trained_model = model
 		trained_model.load_state_dict(torch.load(checkpoint))
@@ -225,15 +236,36 @@ def run(_cfg: DictConfig):
 			sigma = sigma.data.cpu().numpy().reshape(NB_RAYS,-1)
 			text = f"PSNR: {test_loss:.2f}"
 
-			write_imgs((cpu_imgs, train_psnr.tolist(), sigma, sigma_gt, px_vals), f'{out_dir}/loss_{img_index}.png', text, show_training_img=False)
+			save_training_report((cpu_imgs, train_psnr.tolist(), sigma, sigma_gt, px_vals), f'{out_dir}/loss_{img_index}.png', text, show_training_img=False)
 
 		if _cfg.output.get("volume", None):
-			volume  = build_volume(model, device, _cfg, volume_path, factor)
+			volume  = build_volume(model, device, _cfg, volume_path)
+			# volume /= 100
 
 			if  (volume_gt is not None) and (volume_gt.shape == tuple(volume.shape)):
 				volume_gt = torch.tensor(volume_gt, dtype=torch.float32)
+				log.info(f"GT Volume min {volume_gt.min()} | max: {volume_gt.max()} | avg {volume_gt.mean()} ")
 				volume_psnr = compute_psnr(torch.mean((volume_gt-volume)**2), volume_gt.max())
-				log.info(f"Volume PSNR = {volume_psnr}")
+				log.info(f"Volume PSNR = {volume_psnr:.4f}")
+
+
+				volume_psnr = compute_psnr(torch.mean((normalize(volume_gt)-normalize(volume))**2))
+				log.info(f"Volume PSNR (normalized) = {volume_psnr:.4f}")
+
+				diff = (volume_gt-volume).abs()
+				diff_norm = (normalize(volume_gt)-normalize(volume)).abs()
+
+				plt.imsave(f"{slices_path}/slice_x.png", volume[volume.shape[0]//2, :, :])
+				plt.imsave(f"{slices_path}/slice_y.png", volume[:, volume.shape[0]//2, :])
+				plt.imsave(f"{slices_path}/slice_z.png", volume[:, :, volume.shape[0]//2])
+
+				plt.imsave(f"{slices_path}/slice_diff_x.png", diff[diff.shape[0]//2, :, :])
+				plt.imsave(f"{slices_path}/slice_diff_y.png", diff[:, diff.shape[0]//2, :])
+				plt.imsave(f"{slices_path}/slice_diff_z.png", diff[:, :, diff.shape[0]//2])
+
+				plt.imsave(f"{slices_path}/slice_diff_norm_x.png", diff_norm[diff_norm.shape[0]//2, :, :])
+				plt.imsave(f"{slices_path}/slice_diff_norm_y.png", diff_norm[:, diff_norm.shape[0]//2, :])
+				plt.imsave(f"{slices_path}/slice_diff_norm_z.png", diff_norm[:, :, diff_norm.shape[0]//2])
 
 	# if output["slices"]:
 	# 	# stich together slices into a video

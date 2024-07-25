@@ -23,31 +23,41 @@ optim:
     loss: L2
     milestones: [1, 2, 3, 4]
     gamma: 0.5
-    batchsize: 1024
+    batchsize: 512
     samples_per_ray: 192
     learning_rate: 1e-3
     pixel_importance_sampling: false
-    seed: 0
+    seed: 1337
     factor: 1.0
+    resume_training: true
+    checkpoint: /home/multari/temnerf/tests_volume/zyx/nerf_volume.pt
+    # checkpoint: /home/multari/temnerf/nerf_volume.pt
+    # checkpoint: /home/multari/temnerf/outputs/2024-07-24/pretrained_walnut_128/checkpoints/nerf_model_4.pt
 data:
     # dataset: walnut
     dataset: tem
     transforms_file: transforms
     img_size: 128
-    n_images: 10
+    n_images: 40
+    dist: 1/np.sqrt(2)
     noise_level: 0
     # images_path: data/Au_Ag/Serie_3_ali.tif
     # angles_path: data/Au_Ag/TiltAngle_ali.txt
-    # images_path: data/shepp_projections/shepp_projection_512_120.tiff
-    # images_path: data/shepp_projections/shepp_projections_512_120_8bit.tiff
-    # angles_path: data/shepp_projections/angles_120.txt
-    # images_path: data/benchmark/au_ag_sirt_180_8bit.tiff
-    # images_path: data/benchmark/au_ag_sirt_180.tiff
-    # angles_path: data/benchmark/au_ag_sirt_180.txt
-    # ground_truth_path: data/benchmark/au_ag_sirt.npy
-    images_path: data/benchmark/tube_180_8bit.tiff
-    angles_path: data/benchmark/tube_180.txt
-    ground_truth_path: data/benchmark/tube_256.npy
+
+    # images_path: data/benchmark/shepp_logan_180_8bit.tiff
+    # angles_path: data/benchmark/shepp_logan_180.txt
+
+    images_path: data/benchmark/au_ag_sirt_180_8bit.tiff
+    angles_path: data/benchmark/au_ag_sirt_180.txt
+    ground_truth_path: data/benchmark/au_ag_sirt_128.npy
+
+    # images_path: data/benchmark/tube_180_8bit.tiff
+    # angles_path: data/benchmark/tube_180.txt
+    # ground_truth_path: data/benchmark/tube_256.npy
+
+    # images_path: data/benchmark/sphere_180_8bit.tiff
+    # angles_path: data/benchmark/sphere_180.txt
+    # ground_truth_path: data/benchmark/sphere_256.npy
 
 output:
     images: true

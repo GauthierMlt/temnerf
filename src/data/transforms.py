@@ -39,6 +39,9 @@ def au_ag(img: np.ndarray, shape: int | tuple, normalize=False):
     factor = 255. if normalize else 1.
 
     img = (img.to(device='cuda').to(dtype=torch.float32)/factor).contiguous()
+    
+    # img = torch.permute(img, (1, 0))
+    
 
     if len(img.shape) == 2:
         img = img.unsqueeze(0) # (C, H, W) 

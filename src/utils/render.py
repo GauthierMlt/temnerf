@@ -7,9 +7,12 @@ from utils.chart_writer import *
 from utils.sampling import get_samples_around_point
 from utils.debug import plot_rays
 from utils.utils import desktop_environment_available
-
+from utils.data import compute_psnr, write_img
 from tqdm import tqdm
 import os
+import logging
+
+log = logging.getLogger(__name__)
 
 class IndexedDataset(Dataset):
 	def __init__(self, data):
@@ -131,10 +134,7 @@ def build_volume(model, device, config, out_dir, factor=1.0, open_file_explorer=
 	
 	np.save(filepath, volume.cpu().numpy())
 
-	try:
-		log.info(f"Volume min {volume.min()} | max: {volume.max()} | avg {volume.mean()} ")
-	except:
-		print(f"Volume min {volume.min()} | max: {volume.max()} | avg {volume.mean()} ")
+	log.info(f"Volume min {volume.min()} | max: {volume.max()} | avg {volume.mean()} ")
 
 	if open_file_explorer:
 		try:
@@ -214,7 +214,7 @@ def get_points_along_rays(ray_origins, ray_directions, hn, hf, nb_bins, debug=Fa
 	return x.reshape(-1, 3), delta
 
 
-def get_pixel_values(nerf_model, ray_origins, ray_directions, hn, hf, nb_bins, debug=False):
+def get_pixel_values(nerf_model, ray_origins, ray_directions, hn, hf, nb_bins, debug=False) -> torch.Tensor:
 	x, delta = get_points_along_rays(ray_origins, ray_directions, hn, hf, nb_bins, debug)
 	sigma = nerf_model(x) # [batch_size*(nb_bins-1), 1]
 	sigma = sigma.reshape(-1, nb_bins)
@@ -317,7 +317,26 @@ def render_image(model, frame, **params):
 
 	return img_tensor
 
+def render_and_save_slices(model, device, epoch, sub_epoch, output, out_dir, volume_gt: np.ndarray):
+    
+    resolution = (output["slice_resolution"], output["slice_resolution"])
 
+    if output["slices"]:
+        for axis, name in enumerate(['x','y','z']):
+            img = render_slice(model=model, 
+                                dim=axis, 
+                                device=device, 
+                                resolution=resolution, 
+                                voxel_grid=False, 
+                                samples_per_point = output["rays_per_pixel"])
+            # img = (img - img.min()) / (img.max() - img.min())
+            img = img.data.cpu().numpy().reshape(resolution[0], resolution[1])
+            
+            write_img(img, f'{out_dir}/slice_{name}_{epoch:04}_{sub_epoch:04}.png', verbose=False)
+
+            if volume_gt is not None:
+                gt_img = np.moveaxis(volume_gt, axis, 0)[volume_gt.shape[axis]//2]
+                write_img(gt_img, f'{out_dir}/slice_{name}_{epoch:04}_{sub_epoch:04}_gt.png', verbose=False)
 
 @torch.no_grad()
 def test_model(model, dataset, img_index, factor, **render_params):
@@ -335,6 +354,5 @@ def test_model(model, dataset, img_index, factor, **render_params):
 
 	diff = (gt - img_tensor).abs()
 	loss = (diff ** 2).mean() 
-	test_loss = compute_psnr(loss)
-	return test_loss, [img_tensor,gt,diff]
+	return compute_psnr(loss), [img_tensor,gt,diff]
 	

@@ -5,8 +5,10 @@ from PIL import Image
 import torch
 import os
 from torchvision.transforms import ToPILImage
-from utils.render import render_slice
-from utils.chart_writer import write_img
+import matplotlib.pyplot as plt
+import logging
+
+log = logging.getLogger(__name__)
 
 def load_images(images_path: str, target_size: int, rescale_values=False) -> np.ndarray:
 
@@ -31,8 +33,8 @@ def load_images(images_path: str, target_size: int, rescale_values=False) -> np.
             old_range = (images.min().item(), images.max().item())
             images /= 255.
             images = images.clamp(0., 1.)
-            print(f"Rescaled pixel values from {old_range} to "
-                  f"{(images.min().item(), images.max().item())}")
+            log.info(f"Rescaled pixel values from {old_range} to "
+                     f"{(images.min().item(), images.max().item())}")
 
     return images
 
@@ -99,21 +101,21 @@ def save_tensor_as_image(tensor, iter, directory, prefix="train_proj", file_form
             img.save(os.path.join(directory, f"{iter:4g}_{prefix}_batch{i}_img{j}.{file_format}"))
 
 
-def write_slices(model, device, epoch, sub_epoch, output, out_dir, volume_gt: np.ndarray):
-    # MAX_BRIGHTNESS = 10.
-    resolution = (output["slice_resolution"], output["slice_resolution"])
+def write_img(img, path, verbose=True):
+	fig, ax = plt.subplots(figsize=(20, 20))
+	ax.imshow(img, cmap='gray', origin='lower') # to show images the correct way up!
+	ax.invert_xaxis()
+	plt.axis('off')
+	plt.savefig(path, bbox_inches='tight', pad_inches=0)
+	plt.close()
+	if verbose:
+		print(f"Image {img.shape[0]} x {img.shape[1]} written to {path}")
+@torch.no_grad()
+def normalize(obj: np.ndarray | torch.Tensor ) -> np.ndarray | torch.Tensor:
 
-    if output["slices"]:
-        for axis, name in enumerate(['x','y','z']):
-            img = render_slice(model=model, 
-                                dim=axis, 
-                                device=device, 
-                                resolution=resolution, 
-                                voxel_grid=False, 
-                                samples_per_point = output["rays_per_pixel"])
-            # img = (img - img.min()) / (img.max() - img.min())
-            img = img.data.clamp(0, 1.).cpu().numpy().reshape(resolution[0], resolution[1])
-            gt_img = np.moveaxis(volume_gt, axis, 0)[128, :, :]
-            
-            write_img(img, f'{out_dir}/slice_{name}_{epoch:04}_{sub_epoch:04}.png', verbose=False)
-            write_img(gt_img, f'{out_dir}/slice_{name}_{epoch:04}_{sub_epoch:04}_gt.png', verbose=False)
+    return (obj - obj.min()) / (obj.max() - obj.min())
+
+
+@torch.no_grad()
+def compute_psnr(mse, max_val=1):
+	return 10 * torch.log10(max_val ** 2 / mse)
